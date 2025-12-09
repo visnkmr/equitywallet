@@ -15,6 +15,9 @@ interface HoldingsTableProps {
   totals: Totals;
 }
 
+type SortField = 'instrument' | 'quantity' | 'avgCost' | 'ltp' | 'invested' | 'curVal' | 'pl' | 'netChg' | 'dayChg';
+type SortDirection = 'asc' | 'desc';
+
 export default function HoldingsTable({ holdings: initialHoldings, totals: initialTotals }: HoldingsTableProps) {
   const [holdings, setHoldings] = useState<Holding[]>([]);
   const [selectedTag, setSelectedTag] = useState<string>('');
@@ -22,6 +25,10 @@ export default function HoldingsTable({ holdings: initialHoldings, totals: initi
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
   const [isUploading, setIsUploading] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
+  const [sortField, setSortField] = useState<SortField>('instrument');
+  const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
 
   // Detect mobile screen size
   useEffect(() => {
@@ -96,8 +103,75 @@ export default function HoldingsTable({ holdings: initialHoldings, totals: initi
     ? holdings.filter(h => h.tags.includes(selectedTag))
     : holdings;
 
+  // Apply sorting
+  // Apply search filter
+  const searchedHoldings = searchTerm 
+    ? filteredHoldings.filter(h => 
+        h.instrument.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        h.tags.some(tag => tag.toLowerCase().includes(searchTerm.toLowerCase()))
+      )
+    : filteredHoldings;
+
+  // Apply sorting
+  const sortedHoldings = [...searchedHoldings].sort((a, b) => {
+    let aValue: number | string;
+    let bValue: number | string;
+    
+    switch (sortField) {
+      case 'instrument':
+        aValue = a.instrument.toLowerCase();
+        bValue = b.instrument.toLowerCase();
+        break;
+      case 'quantity':
+        aValue = a.quantity;
+        bValue = b.quantity;
+        break;
+      case 'avgCost':
+        aValue = a.avgCost;
+        bValue = b.avgCost;
+        break;
+      case 'ltp':
+        aValue = a.ltp;
+        bValue = b.ltp;
+        break;
+      case 'invested':
+        aValue = a.invested;
+        bValue = b.invested;
+        break;
+      case 'curVal':
+        aValue = a.curVal;
+        bValue = b.curVal;
+        break;
+      case 'pl':
+        aValue = a.pl;
+        bValue = b.pl;
+        break;
+      case 'netChg':
+        aValue = a.netChg;
+        bValue = b.netChg;
+        break;
+      case 'dayChg':
+        aValue = a.dayChg;
+        bValue = b.dayChg;
+        break;
+      default:
+        aValue = a.instrument.toLowerCase();
+        bValue = b.instrument.toLowerCase();
+    }
+    
+    if (typeof aValue === 'string' && typeof bValue === 'string') {
+      return sortDirection === 'asc' 
+        ? aValue.localeCompare(bValue)
+        : bValue.localeCompare(aValue);
+    }
+    
+    return sortDirection === 'asc' 
+      ? (aValue as number) - (bValue as number)
+      : (bValue as number) - (aValue as number);
+  });
+
   const totals = selectedTag
-    ? calculateTotals(filteredHoldings.filter(h => !h.hidden))
+    ? calculateTotals(sortedHoldings.filter(h => !h.hidden))
     : calculateTotals(holdings.filter(h => !h.hidden));
 
   const allTags = Array.from(new Set(holdings.flatMap(h => h.tags)));
@@ -141,6 +215,102 @@ export default function HoldingsTable({ holdings: initialHoldings, totals: initi
         ? { ...h, tags: h.tags.filter(t => t !== tagToRemove) }
         : h
     ));
+  };
+
+  const handleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDirection('asc');
+    }
+  };
+
+  const getSortIcon = (field: SortField) => {
+    if (sortField !== field) {
+      return <span className="text-gray-400">↕</span>;
+    }
+    return sortDirection === 'asc' 
+      ? <span className="text-blue-500">↑</span>
+      : <span className="text-blue-500">↓</span>;
+  };
+
+  const [exportJson, setExportJson] = useState('');
+  const [importJson, setImportJson] = useState('');
+  const [showExportModal, setShowExportModal] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [copySuccess, setCopySuccess] = useState(false);
+
+  const exportData = () => {
+    const data: StoredData = {
+      holdings: holdings.map(h => ({
+        ...h,
+        hidden: false,
+        tags: []
+      })),
+      hiddenInstruments: holdings.filter(h => h.hidden).map(h => h.instrument),
+      instrumentTags: holdings.reduce((acc, h) => {
+        if (h.tags.length > 0) {
+          acc[h.instrument] = h.tags;
+        }
+        return acc;
+      }, {} as Record<string, string[]>),
+      theme
+    };
+    
+    const jsonString = JSON.stringify(data, null, 2);
+    setExportJson(jsonString);
+    setShowExportModal(true);
+    setCopySuccess(false);
+  };
+
+  const importDataFromText = () => {
+    if (!importJson.trim()) {
+      alert('Please paste JSON data in the text area.');
+      return;
+    }
+
+    try {
+      const data: StoredData = JSON.parse(importJson);
+      
+      if (data.holdings && Array.isArray(data.holdings)) {
+        const importedHoldings = data.holdings.map(holding => ({
+          ...holding,
+          hidden: data.hiddenInstruments?.includes(holding.instrument) || false,
+          tags: data.instrumentTags?.[holding.instrument] || []
+        }));
+        
+        setHoldings(importedHoldings);
+        setTheme(data.theme || 'light');
+        setImportJson('');
+        setShowImportModal(false);
+        alert(`Successfully imported ${importedHoldings.length} holdings with settings.`);
+      } else {
+        throw new Error('Invalid JSON format - missing holdings array');
+      }
+    } catch (error) {
+      alert(`Error importing data: ${error instanceof Error ? error.message : 'Invalid JSON format'}. Please ensure it's a valid holdings backup file.`);
+    }
+  };
+
+  const copyToClipboard = async () => {
+    try {
+      await navigator.clipboard.writeText(exportJson);
+      setCopySuccess(true);
+      setTimeout(() => setCopySuccess(false), 2000);
+    } catch (error) {
+      alert('Failed to copy to clipboard. Please copy manually.');
+    }
+  };
+
+  const clearAllData = () => {
+    if (confirm('Are you sure you want to clear all data? This action cannot be undone.')) {
+      localStorage.removeItem('holdingsData');
+      setHoldings([]);
+      setSelectedTag('');
+      setSearchTerm('');
+      alert('All data has been cleared.');
+    }
   };
 
   const toggleTheme = () => {
@@ -226,7 +396,14 @@ export default function HoldingsTable({ holdings: initialHoldings, totals: initi
   return (
     <div className={`min-h-screen ${themeClasses} p-6 max-w-7xl mx-auto`}>
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
-        <h1 className="text-3xl font-bold">Investment Holdings</h1>
+        <div>
+          <h1 className="text-3xl font-bold">Investment Holdings</h1>
+          {holdings.length > 0 && (
+            <p className={`text-sm mt-1 ${secondaryTextClasses}`}>
+              {holdings.length} instruments • {holdings.filter(h => !h.hidden).length} visible • {holdings.filter(h => h.hidden).length} hidden
+            </p>
+          )}
+        </div>
         <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center w-full sm:w-auto">
           <div className="flex items-center gap-2 w-full sm:w-auto">
             <label className={`text-sm font-medium ${textClasses} whitespace-nowrap`}>
@@ -245,6 +422,16 @@ export default function HoldingsTable({ holdings: initialHoldings, totals: initi
             />
             {isUploading && <span className="text-sm whitespace-nowrap">Processing...</span>}
           </div>
+          <button
+            onClick={() => setIsSettingsOpen(!isSettingsOpen)}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
+              theme === 'dark'
+                ? 'bg-gray-700 text-white hover:bg-gray-600'
+                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+            }`}
+          >
+            {isSettingsOpen ? '✖️ Close' : '⚙️ Settings'}
+          </button>
           <button
             onClick={toggleTheme}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
@@ -281,51 +468,177 @@ export default function HoldingsTable({ holdings: initialHoldings, totals: initi
           </p>
         </div>
       )}
-      
-      {/* Summary Cards - Only show when there's data */}
+
+      {/* Collapsible Settings Section */}
+      <div className={`mb-6 border rounded-lg overflow-hidden transition-all duration-300 ${
+        theme === 'dark' ? 'border-gray-700' : 'border-gray-200'
+      }`}>
+        <button
+          onClick={() => setIsSettingsOpen(!isSettingsOpen)}
+          className={`w-full px-4 py-3 text-left font-medium flex justify-between items-center transition-colors ${
+            theme === 'dark' 
+              ? 'bg-gray-800 hover:bg-gray-700 text-white' 
+              : 'bg-gray-50 hover:bg-gray-100 text-gray-900'
+          }`}
+        >
+          <span>⚙️ Data Management</span>
+          <span className={`transform transition-transform duration-300 ${isSettingsOpen ? 'rotate-180' : ''}`}>
+            ▼
+          </span>
+        </button>
+        
+        {isSettingsOpen && (
+          <div className={`p-6 space-y-6 ${
+            theme === 'dark' ? 'bg-gray-800' : 'bg-white'
+          }`}>
+            {/* Export Section */}
+            <div>
+              <h3 className={`text-lg font-semibold mb-3 ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+                📤 Export Data
+              </h3>
+              <p className={`text-sm mb-3 ${secondaryTextClasses}`}>
+                Export all your holdings, tags, and settings as JSON.
+              </p>
+              <button
+                onClick={exportData}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+              >
+                Show Backup JSON
+              </button>
+            </div>
+
+            {/* Import Section */}
+            <div>
+              <h3 className={`text-lg font-semibold mb-3 ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+                📥 Import Data
+              </h3>
+              <p className={`text-sm mb-3 ${secondaryTextClasses}`}>
+                Import holdings and settings from JSON. This will replace all current data.
+              </p>
+              <button
+                onClick={() => setShowImportModal(true)}
+                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium"
+              >
+                Import from JSON
+              </button>
+            </div>
+
+            {/* Clear Data Section */}
+            <div>
+              <h3 className={`text-lg font-semibold mb-3 ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+                🗑️ Clear Data
+              </h3>
+              <p className={`text-sm mb-3 ${secondaryTextClasses}`}>
+                Permanently delete all holdings and settings from this device.
+              </p>
+              <button
+                onClick={clearAllData}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium"
+              >
+                Clear All Data
+              </button>
+            </div>
+
+            {/* Statistics */}
+            <div>
+              <h3 className={`text-lg font-semibold mb-3 ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+                📊 Statistics
+              </h3>
+              <div className={`grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm ${secondaryTextClasses}`}>
+                <div>
+                  <span className="font-medium">Total Instruments:</span> {holdings.length}
+                </div>
+                <div>
+                  <span className="font-medium">Total Tags:</span> {allTags.length}
+                </div>
+                <div>
+                  <span className="font-medium">Hidden Items:</span> {holdings.filter(h => h.hidden).length}
+                </div>
+                <div>
+                  <span className="font-medium">Theme:</span> {theme === 'dark' ? 'Dark' : 'Light'}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Search and Filter - Only show when there's data */}
       {holdings.length > 0 && (
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-          <div className={`rounded-lg shadow-lg p-6 border ${cardClasses}`}>
-            <h3 className={`text-sm font-medium mb-2 ${secondaryTextClasses}`}>Total Invested</h3>
-            <p className="text-2xl font-bold">₹{totals.invested.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</p>
+        <div className="mb-6 space-y-4">
+          {/* Search Bar */}
+          <div>
+            <label className={`block text-sm font-medium ${textClasses} mb-2`}>Search Instruments</label>
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Search by instrument name or tag..."
+              className={`block w-full px-4 py-2 border rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
+                theme === 'dark' 
+                  ? 'border-gray-600 bg-gray-800 text-white placeholder-gray-400' 
+                  : 'border-gray-300 bg-white text-gray-900 placeholder-gray-500'
+              }`}
+            />
           </div>
-          <div className={`rounded-lg shadow-lg p-6 border ${cardClasses}`}>
-            <h3 className={`text-sm font-medium mb-2 ${secondaryTextClasses}`}>Current Value</h3>
-            <p className="text-2xl font-bold">₹{totals.curVal.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</p>
-          </div>
-          <div className={`rounded-lg shadow-lg p-6 border ${cardClasses}`}>
-            <h3 className={`text-sm font-medium mb-2 ${secondaryTextClasses}`}>P&L</h3>
-            <p className={`text-2xl font-bold ${totals.pl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-              ₹{totals.pl.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
-            </p>
-          </div>
-          <div className={`rounded-lg shadow-lg p-6 border ${cardClasses}`}>
-            <h3 className={`text-sm font-medium mb-2 ${secondaryTextClasses}`}>P&L %</h3>
-            <p className={`text-2xl font-bold ${totals.plPercent >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-              {totals.plPercent.toFixed(2)}%
-            </p>
+
+          {/* Tag Filter */}
+          <div>
+            <label className={`block text-sm font-medium ${textClasses} mb-2`}>Filter by Tag</label>
+            <select 
+              value={selectedTag} 
+              onChange={(e) => setSelectedTag(e.target.value)}
+              className={`block w-full px-4 py-2 border rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
+                theme === 'dark' 
+                  ? 'border-gray-600 bg-gray-800 text-white' 
+                  : 'border-gray-300 bg-white text-gray-900'
+              }`}
+            >
+              <option value="">All Holdings</option>
+              {allTags.map(tag => (
+                <option key={tag} value={tag}>{tag}</option>
+              ))}
+            </select>
           </div>
         </div>
       )}
 
-      {/* Tag Filter - Only show when there's data */}
+      {/* Totals Summary - Only show when there's data */}
       {holdings.length > 0 && (
-        <div className="mb-6">
-          <label className={`block text-sm font-medium ${textClasses} mb-2`}>Filter by Tag</label>
-          <select 
-            value={selectedTag} 
-            onChange={(e) => setSelectedTag(e.target.value)}
-            className={`block w-full px-4 py-2 border rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
-              theme === 'dark' 
-                ? 'border-gray-600 bg-gray-800 text-white' 
-                : 'border-gray-300 bg-white text-gray-900'
-            }`}
-          >
-            <option value="">All Holdings</option>
-            {allTags.map(tag => (
-              <option key={tag} value={tag}>{tag}</option>
-            ))}
-          </select>
+        <div className={`mb-6 rounded-lg shadow-md border p-6 ${
+          theme === 'dark' 
+            ? 'bg-gray-800 border-gray-700' 
+            : 'bg-white border-gray-200'
+        }`}>
+          <h2 className={`text-xl font-semibold mb-4 ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+            Portfolio Summary
+          </h2>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div>
+              <p className={`text-sm ${secondaryTextClasses}`}>Total Invested</p>
+              <p className={`text-2xl font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+                ₹{totals.invested.toFixed(2)}
+              </p>
+            </div>
+            <div>
+              <p className={`text-sm ${secondaryTextClasses}`}>Current Value</p>
+              <p className={`text-2xl font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+                ₹{totals.curVal.toFixed(2)}
+              </p>
+            </div>
+            <div>
+              <p className={`text-sm ${secondaryTextClasses}`}>Total P&L</p>
+              <p className={`text-2xl font-bold ${totals.pl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                ₹{totals.pl.toFixed(2)}
+              </p>
+            </div>
+            <div>
+              <p className={`text-sm ${secondaryTextClasses}`}>P&L %</p>
+              <p className={`text-2xl font-bold ${totals.plPercent >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                {totals.plPercent.toFixed(2)}%
+              </p>
+            </div>
+          </div>
         </div>
       )}
 
@@ -333,7 +646,7 @@ export default function HoldingsTable({ holdings: initialHoldings, totals: initi
       {holdings.length > 0 && (isMobile ? (
         // Mobile Card Layout
         <div className="space-y-4">
-          {filteredHoldings.map((holding) => (
+          {sortedHoldings.map((holding) => (
             <div 
               key={holding.instrument} 
               className={`rounded-lg shadow-md border p-4 ${
@@ -465,20 +778,92 @@ export default function HoldingsTable({ holdings: initialHoldings, totals: initi
           <table className={`min-w-full divide-y ${theme === 'dark' ? 'divide-gray-700' : 'divide-gray-200'}`}>
             <thead className={headerClasses}>
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider">Instrument</th>
-                <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider">Qty</th>
-                <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider">Avg Cost</th>
-                <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider">LTP</th>
-                <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider">Invested</th>
-                <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider">Cur Val</th>
-                <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider">P&L</th>
-                <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider">Net Chg %</th>
-                <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider">Day Chg %</th>
+                <th 
+                  className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider cursor-pointer hover:bg-opacity-80"
+                  onClick={() => handleSort('instrument')}
+                >
+                  <div className="flex items-center gap-1">
+                    Instrument
+                    {getSortIcon('instrument')}
+                  </div>
+                </th>
+                <th 
+                  className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider cursor-pointer hover:bg-opacity-80"
+                  onClick={() => handleSort('quantity')}
+                >
+                  <div className="flex items-center gap-1">
+                    Qty
+                    {getSortIcon('quantity')}
+                  </div>
+                </th>
+                <th 
+                  className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider cursor-pointer hover:bg-opacity-80"
+                  onClick={() => handleSort('avgCost')}
+                >
+                  <div className="flex items-center gap-1">
+                    Avg Cost
+                    {getSortIcon('avgCost')}
+                  </div>
+                </th>
+                <th 
+                  className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider cursor-pointer hover:bg-opacity-80"
+                  onClick={() => handleSort('ltp')}
+                >
+                  <div className="flex items-center gap-1">
+                    LTP
+                    {getSortIcon('ltp')}
+                  </div>
+                </th>
+                <th 
+                  className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider cursor-pointer hover:bg-opacity-80"
+                  onClick={() => handleSort('invested')}
+                >
+                  <div className="flex items-center gap-1">
+                    Invested
+                    {getSortIcon('invested')}
+                  </div>
+                </th>
+                <th 
+                  className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider cursor-pointer hover:bg-opacity-80"
+                  onClick={() => handleSort('curVal')}
+                >
+                  <div className="flex items-center gap-1">
+                    Cur Val
+                    {getSortIcon('curVal')}
+                  </div>
+                </th>
+                <th 
+                  className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider cursor-pointer hover:bg-opacity-80"
+                  onClick={() => handleSort('pl')}
+                >
+                  <div className="flex items-center gap-1">
+                    P&L
+                    {getSortIcon('pl')}
+                  </div>
+                </th>
+                <th 
+                  className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider cursor-pointer hover:bg-opacity-80"
+                  onClick={() => handleSort('netChg')}
+                >
+                  <div className="flex items-center gap-1">
+                    Net Chg %
+                    {getSortIcon('netChg')}
+                  </div>
+                </th>
+                <th 
+                  className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider cursor-pointer hover:bg-opacity-80"
+                  onClick={() => handleSort('dayChg')}
+                >
+                  <div className="flex items-center gap-1">
+                    Day Chg %
+                    {getSortIcon('dayChg')}
+                  </div>
+                </th>
                 <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider min-w-[200px]">Tags</th>
               </tr>
             </thead>
             <tbody>
-              {filteredHoldings.map((holding) => (
+              {sortedHoldings.map((holding) => (
                 <tr key={holding.instrument} className={`${
                   theme === 'dark' 
                     ? 'hover:bg-gray-700' 
@@ -582,6 +967,114 @@ export default function HoldingsTable({ holdings: initialHoldings, totals: initi
           </table>
         </div>
       ))}
+
+      {/* Export Modal */}
+      {showExportModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className={`rounded-lg shadow-xl max-w-4xl w-full max-h-[80vh] overflow-hidden ${
+            theme === 'dark' ? 'bg-gray-800' : 'bg-white'
+          }`}>
+            <div className={`px-6 py-4 border-b flex justify-between items-center ${
+              theme === 'dark' ? 'border-gray-700' : 'border-gray-200'
+            }`}>
+              <h2 className={`text-xl font-semibold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+                📤 Export Backup JSON
+              </h2>
+              <button
+                onClick={() => setShowExportModal(false)}
+                className={`text-2xl hover:opacity-70 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}
+              >
+                ×
+              </button>
+            </div>
+            <div className="p-6">
+              <p className={`text-sm mb-4 ${secondaryTextClasses}`}>
+                Copy this JSON data to backup your holdings, tags, and settings. You can import it later using the Import from JSON option.
+              </p>
+              <div className="mb-4">
+                <button
+                  onClick={copyToClipboard}
+                  className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                    copySuccess
+                      ? 'bg-green-600 text-white'
+                      : theme === 'dark'
+                        ? 'bg-gray-700 text-white hover:bg-gray-600'
+                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                  }`}
+                >
+                  {copySuccess ? '✓ Copied!' : '📋 Copy to Clipboard'}
+                </button>
+              </div>
+              <div className={`rounded-lg p-4 overflow-auto max-h-96 font-mono text-xs ${
+                theme === 'dark' 
+                  ? 'bg-gray-900 border border-gray-700 text-gray-300' 
+                  : 'bg-gray-50 border border-gray-200 text-gray-800'
+              }`}>
+                <pre>{exportJson}</pre>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Import Modal */}
+      {showImportModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className={`rounded-lg shadow-xl max-w-4xl w-full max-h-[80vh] overflow-hidden ${
+            theme === 'dark' ? 'bg-gray-800' : 'bg-white'
+          }`}>
+            <div className={`px-6 py-4 border-b flex justify-between items-center ${
+              theme === 'dark' ? 'border-gray-700' : 'border-gray-200'
+            }`}>
+              <h2 className={`text-xl font-semibold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+                📥 Import Backup JSON
+              </h2>
+              <button
+                onClick={() => setShowImportModal(false)}
+                className={`text-2xl hover:opacity-70 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}
+              >
+                ×
+              </button>
+            </div>
+            <div className="p-6">
+              <p className={`text-sm mb-4 ${secondaryTextClasses}`}>
+                Paste your backup JSON data below. This will replace all current holdings, tags, and settings.
+              </p>
+              <textarea
+                value={importJson}
+                onChange={(e) => setImportJson(e.target.value)}
+                placeholder="Paste your JSON backup data here..."
+                className={`w-full h-64 p-4 rounded-lg font-mono text-xs border resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                  theme === 'dark'
+                    ? 'bg-gray-900 border-gray-700 text-gray-300 placeholder-gray-500'
+                    : 'bg-gray-50 border-gray-200 text-gray-800 placeholder-gray-500'
+                }`}
+              />
+              <div className="mt-4 flex gap-3">
+                <button
+                  onClick={importDataFromText}
+                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium"
+                >
+                  Import Data
+                </button>
+                <button
+                  onClick={() => {
+                    setShowImportModal(false);
+                    setImportJson('');
+                  }}
+                  className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                    theme === 'dark'
+                      ? 'bg-gray-700 text-white hover:bg-gray-600'
+                      : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                  }`}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
