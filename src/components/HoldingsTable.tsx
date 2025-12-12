@@ -8,6 +8,7 @@ interface StoredData {
   hiddenInstruments: string[];
   instrumentTags: Record<string, string[]>;
   theme: 'light' | 'dark';
+  hiddenQuickViewTags: string[];
 }
 
 interface HoldingsTableProps {
@@ -27,11 +28,13 @@ export default function HoldingsTable({ holdings: initialHoldings, totals: initi
   const [isMobile, setIsMobile] = useState(false);
   const [sortField, setSortField] = useState<SortField>('instrument');
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
-  const [sortFieldQuick, setSortFieldQuick] = useState<'instrument' | 'netChg' | 'dayChg'>('netChg');
+  const [sortFieldQuick, setSortFieldQuick] = useState<'instrument' | 'netChg' | 'dayChg' | 'invested'>('netChg');
   const [sortDirectionQuick, setSortDirectionQuick] = useState<SortDirection>('desc');
   const [quickViewMode, setQuickViewMode] = useState<'netChg' | 'dayChg'>('netChg');
   const [quickViewLayout, setQuickViewLayout] = useState<'expanded' | 'minimal'>('expanded');
   const [quickViewExpanded, setQuickViewExpanded] = useState(true);
+  const [hiddenQuickViewTags, setHiddenQuickViewTags] = useState<string[]>([]);
+  const [showTagDropdown, setShowTagDropdown] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
 
@@ -40,11 +43,23 @@ export default function HoldingsTable({ holdings: initialHoldings, totals: initi
     const checkMobile = () => {
       setIsMobile(window.innerWidth < 768);
     };
-    
+
     checkMobile();
     window.addEventListener('resize', checkMobile);
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
+
+  // Close tag dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (showTagDropdown && !(event.target as Element).closest('.tag-dropdown-container')) {
+        setShowTagDropdown(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showTagDropdown]);
 
   // Load stored data from localStorage on mount
   useEffect(() => {
@@ -60,6 +75,7 @@ export default function HoldingsTable({ holdings: initialHoldings, totals: initi
           })));
         }
         setTheme(data.theme || 'light');
+        setHiddenQuickViewTags(data.hiddenQuickViewTags || []);
       } catch (error) {
         console.error('Error loading stored data:', error);
       }
@@ -78,6 +94,7 @@ export default function HoldingsTable({ holdings: initialHoldings, totals: initi
           tags: data.instrumentTags[holding.instrument] || []
         })));
         setTheme(data.theme || 'light');
+        setHiddenQuickViewTags(data.hiddenQuickViewTags || []);
       } catch (error) {
         console.error('Error loading stored data:', error);
       }
@@ -99,7 +116,8 @@ export default function HoldingsTable({ holdings: initialHoldings, totals: initi
         }
         return acc;
       }, {} as Record<string, string[]>),
-      theme
+      theme,
+      hiddenQuickViewTags
     };
     localStorage.setItem('holdingsData', JSON.stringify(data));
   }, [holdings, theme]);
@@ -175,8 +193,13 @@ export default function HoldingsTable({ holdings: initialHoldings, totals: initi
       : (bValue as number) - (aValue as number);
   });
 
+  // Filter holdings for Quick View (exclude those with hidden tags)
+  const quickViewFilteredHoldings = searchedHoldings.filter(holding =>
+    !hiddenQuickViewTags.some(hiddenTag => holding.tags.includes(hiddenTag))
+  );
+
   // Quick view sorting
-  const sortedHoldingsQuick = [...searchedHoldings].sort((a, b) => {
+  const sortedHoldingsQuick = [...quickViewFilteredHoldings].sort((a, b) => {
     let aValue: number | string;
     let bValue: number | string;
 
@@ -192,6 +215,10 @@ export default function HoldingsTable({ holdings: initialHoldings, totals: initi
       case 'dayChg':
         aValue = a.dayChg;
         bValue = b.dayChg;
+        break;
+      case 'invested':
+        aValue = a.invested;
+        bValue = b.invested;
         break;
       default:
         aValue = a.netChg;
@@ -266,7 +293,7 @@ export default function HoldingsTable({ holdings: initialHoldings, totals: initi
     }
   };
 
-  const handleSortQuick = (field: 'instrument' | 'netChg' | 'dayChg') => {
+  const handleSortQuick = (field: 'instrument' | 'netChg' | 'dayChg' | 'invested') => {
     if (sortFieldQuick === field) {
       setSortDirectionQuick(prev => prev === 'asc' ? 'desc' : 'asc');
     } else {
@@ -284,7 +311,7 @@ export default function HoldingsTable({ holdings: initialHoldings, totals: initi
       : <span className="text-blue-500">↓</span>;
   };
 
-  const getSortIconQuick = (field: 'instrument' | 'netChg' | 'dayChg') => {
+  const getSortIconQuick = (field: 'instrument' | 'netChg' | 'dayChg' | 'invested') => {
     if (sortFieldQuick !== field) {
       return <span className="text-gray-400">↕</span>;
     }
@@ -313,7 +340,8 @@ export default function HoldingsTable({ holdings: initialHoldings, totals: initi
         }
         return acc;
       }, {} as Record<string, string[]>),
-      theme
+      theme,
+      hiddenQuickViewTags
     };
     
     const jsonString = JSON.stringify(data, null, 2);
@@ -340,6 +368,7 @@ export default function HoldingsTable({ holdings: initialHoldings, totals: initi
         
         setHoldings(importedHoldings);
         setTheme(data.theme || 'light');
+        setHiddenQuickViewTags(data.hiddenQuickViewTags || []);
         setImportJson('');
         setShowImportModal(false);
         alert(`Successfully imported ${importedHoldings.length} holdings with settings.`);
@@ -367,6 +396,7 @@ export default function HoldingsTable({ holdings: initialHoldings, totals: initi
       setHoldings([]);
       setSelectedTag('');
       setSearchTerm('');
+      setHiddenQuickViewTags([]);
       alert('All data has been cleared.');
     }
   };
@@ -711,7 +741,7 @@ export default function HoldingsTable({ holdings: initialHoldings, totals: initi
             theme === 'dark' ? 'border-gray-700' : 'border-gray-200'
           }`}>
             <h2 className={`text-xl font-semibold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-              Quick View ({sortedHoldingsQuick.length} holdings)
+              Quick View ({sortedHoldingsQuick.length}{hiddenQuickViewTags.length > 0 ? ` of ${searchedHoldings.length}` : ''} holdings)
             </h2>
             <button
               onClick={() => setQuickViewExpanded(!quickViewExpanded)}
@@ -819,6 +849,92 @@ export default function HoldingsTable({ holdings: initialHoldings, totals: initi
                 >
                   {quickViewMode === 'netChg' ? 'Net Chg' : 'Day Chg'} {getSortIconQuick(quickViewMode)}
                 </button>
+                <button
+                  onClick={() => handleSortQuick('invested')}
+                  className={`px-3 py-2 text-sm rounded-md transition-colors ${
+                    theme === 'dark'
+                      ? 'bg-gray-700 text-white hover:bg-gray-600'
+                      : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                  }`}
+                >
+                  Invested {getSortIconQuick('invested')}
+                </button>
+              </div>
+
+              {/* Hide by Tags */}
+              <div className="flex items-center gap-2">
+                <label className={`text-sm font-medium ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+                  Hide by Tags:
+                </label>
+                <div className="relative tag-dropdown-container">
+                  <button
+                    onClick={() => setShowTagDropdown(!showTagDropdown)}
+                    className={`px-3 py-2 text-sm border rounded-md min-w-[120px] flex items-center justify-between ${
+                      theme === 'dark'
+                        ? 'bg-gray-700 border-gray-600 text-white hover:bg-gray-600'
+                        : 'bg-white border-gray-300 text-gray-900 hover:bg-gray-50'
+                    }`}
+                  >
+                    <span className="truncate">
+                      {hiddenQuickViewTags.length === 0
+                        ? 'Select tags'
+                        : `${hiddenQuickViewTags.length} selected`
+                      }
+                    </span>
+                    <span className={`ml-2 transform transition-transform ${showTagDropdown ? 'rotate-180' : ''}`}>
+                      ▼
+                    </span>
+                  </button>
+
+                  {showTagDropdown && (
+                    <div className={`absolute top-full mt-1 border rounded-md shadow-lg z-10 min-w-[200px] max-h-48 overflow-y-auto ${
+                      theme === 'dark'
+                        ? 'bg-gray-700 border-gray-600'
+                        : 'bg-white border-gray-300'
+                    }`}>
+                      {allTags.length === 0 ? (
+                        <div className={`px-3 py-2 text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
+                          No tags available
+                        </div>
+                      ) : (
+                        <>
+                          {allTags.map(tag => (
+                            <label
+                              key={tag}
+                              className={`flex items-center px-3 py-2 text-sm cursor-pointer hover:bg-opacity-80 ${
+                                theme === 'dark' ? 'hover:bg-gray-600' : 'hover:bg-gray-100'
+                              }`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={hiddenQuickViewTags.includes(tag)}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setHiddenQuickViewTags([...hiddenQuickViewTags, tag]);
+                                  } else {
+                                    setHiddenQuickViewTags(hiddenQuickViewTags.filter(t => t !== tag));
+                                  }
+                                }}
+                                className="mr-2"
+                              />
+                              {tag}
+                            </label>
+                          ))}
+                          {hiddenQuickViewTags.length > 0 && (
+                            <div className="border-t border-gray-600">
+                              <button
+                                onClick={() => setHiddenQuickViewTags([])}
+                                className={`w-full px-3 py-2 text-sm text-left text-red-400 hover:bg-red-900 hover:bg-opacity-20`}
+                              >
+                                Clear all
+                              </button>
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </div>
