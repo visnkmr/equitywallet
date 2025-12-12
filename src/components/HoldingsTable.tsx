@@ -21,7 +21,7 @@ type SortDirection = 'asc' | 'desc';
 export default function HoldingsTable({ holdings: initialHoldings, totals: initialTotals }: HoldingsTableProps) {
   const [holdings, setHoldings] = useState<Holding[]>([]);
   const [selectedTag, setSelectedTag] = useState<string>('');
-  const [newTag, setNewTag] = useState('');
+  const [newTagInputs, setNewTagInputs] = useState<Record<string, string>>({});
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
   const [isUploading, setIsUploading] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
@@ -238,14 +238,15 @@ export default function HoldingsTable({ holdings: initialHoldings, totals: initi
   };
 
   const addTag = (instrument: string) => {
-    if (!newTag.trim()) return;
-    
-    setHoldings(prev => prev.map(h => 
-      h.instrument === instrument 
-        ? { ...h, tags: [...h.tags, newTag.trim()] }
+    const tagValue = newTagInputs[instrument]?.trim();
+    if (!tagValue) return;
+
+    setHoldings(prev => prev.map(h =>
+      h.instrument === instrument
+        ? { ...h, tags: [...h.tags, tagValue] }
         : h
     ));
-    setNewTag('');
+    setNewTagInputs(prev => ({ ...prev, [instrument]: '' }));
   };
 
   const removeTag = (instrument: string, tagToRemove: string) => {
@@ -1025,18 +1026,18 @@ export default function HoldingsTable({ holdings: initialHoldings, totals: initi
                     ))}
                   </div>
                   <div className="flex gap-1">
-                    <input
-                      type="text"
-                      value={newTag}
-                      onChange={(e) => setNewTag(e.target.value)}
-                      placeholder="Add tag"
-                      className={`flex-1 px-2 py-1 text-xs border rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 ${
-                        theme === 'dark'
-                          ? 'border-gray-600 bg-gray-700 text-white'
-                          : 'border-gray-300 bg-white text-gray-900'
-                      }`}
-                      onKeyPress={(e) => e.key === 'Enter' && addTag(holding.instrument)}
-                    />
+                     <input
+                       type="text"
+                       value={newTagInputs[holding.instrument] || ''}
+                       onChange={(e) => setNewTagInputs(prev => ({ ...prev, [holding.instrument]: e.target.value }))}
+                       placeholder="Add tag"
+                       className={`flex-1 px-2 py-1 text-xs border rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 ${
+                         theme === 'dark'
+                           ? 'border-gray-600 bg-gray-700 text-white'
+                           : 'border-gray-300 bg-white text-gray-900'
+                       }`}
+                       onKeyPress={(e) => e.key === 'Enter' && addTag(holding.instrument)}
+                     />
                     <button
                       onClick={() => addTag(holding.instrument)}
                       className="px-2 py-1 text-xs bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
@@ -1064,60 +1065,78 @@ export default function HoldingsTable({ holdings: initialHoldings, totals: initi
                     {getSortIcon('instrument')}
                   </div>
                 </th>
-                <th 
-                  className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider cursor-pointer hover:bg-opacity-80"
-                  onClick={() => handleSort('quantity')}
-                >
-                  <div className="flex items-center gap-1">
-                    Qty
-                    {getSortIcon('quantity')}
-                  </div>
-                </th>
-                <th 
-                  className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider cursor-pointer hover:bg-opacity-80"
-                  onClick={() => handleSort('avgCost')}
-                >
-                  <div className="flex items-center gap-1">
-                    Avg Cost
-                    {getSortIcon('avgCost')}
-                  </div>
-                </th>
-                <th 
-                  className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider cursor-pointer hover:bg-opacity-80"
-                  onClick={() => handleSort('ltp')}
-                >
-                  <div className="flex items-center gap-1">
-                    LTP
-                    {getSortIcon('ltp')}
-                  </div>
-                </th>
-                <th 
-                  className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider cursor-pointer hover:bg-opacity-80"
-                  onClick={() => handleSort('invested')}
-                >
-                  <div className="flex items-center gap-1">
-                    Invested
-                    {getSortIcon('invested')}
-                  </div>
-                </th>
-                <th 
-                  className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider cursor-pointer hover:bg-opacity-80"
-                  onClick={() => handleSort('curVal')}
-                >
-                  <div className="flex items-center gap-1">
-                    Cur Val
-                    {getSortIcon('curVal')}
-                  </div>
-                </th>
-                <th 
-                  className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider cursor-pointer hover:bg-opacity-80"
-                  onClick={() => handleSort('pl')}
-                >
-                  <div className="flex items-center gap-1">
-                    P&L
-                    {getSortIcon('pl')}
-                  </div>
-                </th>
+                 <th
+                   className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider cursor-pointer hover:bg-opacity-80 min-w-[80px]"
+                   onClick={() => handleSort('quantity')}
+                 >
+                   <div className="flex items-center gap-1">
+                     Qty
+                     {getSortIcon('quantity')}
+                   </div>
+                 </th>
+                 <th
+                   className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider cursor-pointer hover:bg-opacity-80 min-w-[100px]"
+                   onClick={() => handleSort('avgCost')}
+                 >
+                   <div className="flex items-center gap-1">
+                     Avg Cost
+                     {getSortIcon('avgCost')}
+                   </div>
+                 </th>
+                 <th
+                   className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider cursor-pointer hover:bg-opacity-80 min-w-[100px]"
+                   onClick={() => handleSort('ltp')}
+                 >
+                   <div className="flex items-center gap-1">
+                     LTP
+                     {getSortIcon('ltp')}
+                   </div>
+                 </th>
+                 <th
+                   className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider cursor-pointer hover:bg-opacity-80 min-w-[100px]"
+                   onClick={() => handleSort('invested')}
+                 >
+                   <div className="flex items-center gap-1">
+                     Invested
+                     {getSortIcon('invested')}
+                   </div>
+                 </th>
+                 <th
+                   className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider cursor-pointer hover:bg-opacity-80 min-w-[100px]"
+                   onClick={() => handleSort('curVal')}
+                 >
+                   <div className="flex items-center gap-1">
+                     Cur Val
+                     {getSortIcon('curVal')}
+                   </div>
+                 </th>
+                 <th
+                   className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider cursor-pointer hover:bg-opacity-80 min-w-[100px]"
+                   onClick={() => handleSort('pl')}
+                 >
+                   <div className="flex items-center gap-1">
+                     P&L
+                     {getSortIcon('pl')}
+                   </div>
+                 </th>
+                 <th
+                   className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider cursor-pointer hover:bg-opacity-80 min-w-[100px]"
+                   onClick={() => handleSort('netChg')}
+                 >
+                   <div className="flex items-center gap-1">
+                     Net Chg %
+                     {getSortIcon('netChg')}
+                   </div>
+                 </th>
+                 <th
+                   className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider cursor-pointer hover:bg-opacity-80 min-w-[100px]"
+                   onClick={() => handleSort('dayChg')}
+                 >
+                   <div className="flex items-center gap-1">
+                     Day Chg %
+                     {getSortIcon('dayChg')}
+                   </div>
+                 </th>
                 <th 
                   className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider cursor-pointer hover:bg-opacity-80"
                   onClick={() => handleSort('netChg')}
@@ -1136,7 +1155,7 @@ export default function HoldingsTable({ holdings: initialHoldings, totals: initi
                     {getSortIcon('dayChg')}
                   </div>
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider min-w-[200px]">Tags</th>
+                <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider min-w-[250px]">Tags</th>
               </tr>
             </thead>
             <tbody>
@@ -1150,7 +1169,7 @@ export default function HoldingsTable({ holdings: initialHoldings, totals: initi
                     ? 'bg-gray-800' 
                     : 'bg-white'
                 }`}>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                   <td className="px-4 py-4 whitespace-nowrap text-sm font-medium">
                     <div className="flex items-center gap-2">
                       <span>{holding.instrument}</span>
                       <button
@@ -1170,31 +1189,31 @@ export default function HoldingsTable({ holdings: initialHoldings, totals: initi
                       </button>
                     </div>
                   </td>
-                  <td className={`px-6 py-4 whitespace-nowrap text-sm ${secondaryTextClasses}`}>
+                  <td className={`px-4 py-4 whitespace-nowrap text-sm ${secondaryTextClasses}`}>
                     {holding.quantity}
                   </td>
-                  <td className={`px-6 py-4 whitespace-nowrap text-sm ${secondaryTextClasses}`}>
+                  <td className={`px-4 py-4 whitespace-nowrap text-sm ${secondaryTextClasses}`}>
                     ₹{holding.avgCost.toFixed(2)}
                   </td>
-                  <td className={`px-6 py-4 whitespace-nowrap text-sm ${secondaryTextClasses}`}>
+                  <td className={`px-4 py-4 whitespace-nowrap text-sm ${secondaryTextClasses}`}>
                     ₹{holding.ltp.toFixed(2)}
                   </td>
-                  <td className={`px-6 py-4 whitespace-nowrap text-sm ${secondaryTextClasses}`}>
+                  <td className={`px-4 py-4 whitespace-nowrap text-sm ${secondaryTextClasses}`}>
                     ₹{holding.invested.toFixed(2)}
                   </td>
-                  <td className={`px-6 py-4 whitespace-nowrap text-sm ${secondaryTextClasses}`}>
+                  <td className={`px-4 py-4 whitespace-nowrap text-sm ${secondaryTextClasses}`}>
                     ₹{holding.curVal.toFixed(2)}
                   </td>
-                  <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium ${holding.pl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                  <td className={`px-4 py-4 whitespace-nowrap text-sm font-medium ${holding.pl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                     ₹{holding.pl.toFixed(2)}
                   </td>
-                  <td className={`px-6 py-4 whitespace-nowrap text-sm ${holding.netChg >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                  <td className={`px-4 py-4 whitespace-nowrap text-sm ${holding.netChg >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                     {holding.netChg.toFixed(2)}%
                   </td>
-                  <td className={`px-6 py-4 whitespace-nowrap text-sm ${holding.dayChg >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                  <td className={`px-4 py-4 whitespace-nowrap text-sm ${holding.dayChg >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                     {holding.dayChg.toFixed(2)}%
                   </td>
-                  <td className={`px-6 py-4 text-sm ${secondaryTextClasses} max-w-xs`}>
+                  <td className={`px-4 py-4 text-sm ${secondaryTextClasses} max-w-xs`}>
                     <div className="space-y-2">
                       <div className="flex flex-wrap gap-1">
                         {holding.tags.map((tag) => (
@@ -1217,18 +1236,18 @@ export default function HoldingsTable({ holdings: initialHoldings, totals: initi
                         ))}
                       </div>
                       <div className="flex gap-1 items-center">
-                        <input
-                          type="text"
-                          value={newTag}
-                          onChange={(e) => setNewTag(e.target.value)}
-                          placeholder="Add tag"
-                          className={`flex-1 px-2 py-1 text-xs border rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 ${
-                            theme === 'dark'
-                              ? 'border-gray-600 bg-gray-700 text-white'
-                              : 'border-gray-300 bg-white text-gray-900'
-                          }`}
-                          onKeyPress={(e) => e.key === 'Enter' && addTag(holding.instrument)}
-                        />
+                         <input
+                           type="text"
+                           value={newTagInputs[holding.instrument] || ''}
+                           onChange={(e) => setNewTagInputs(prev => ({ ...prev, [holding.instrument]: e.target.value }))}
+                           placeholder="Add tag"
+                           className={`flex-1 px-2 py-1 text-xs border rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 ${
+                             theme === 'dark'
+                               ? 'border-gray-600 bg-gray-700 text-white'
+                               : 'border-gray-300 bg-white text-gray-900'
+                           }`}
+                           onKeyPress={(e) => e.key === 'Enter' && addTag(holding.instrument)}
+                         />
                         <button
                           onClick={() => addTag(holding.instrument)}
                           className="px-2 py-1 text-xs bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors whitespace-nowrap"
