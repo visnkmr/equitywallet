@@ -27,6 +27,11 @@ export default function HoldingsTable({ holdings: initialHoldings, totals: initi
   const [isMobile, setIsMobile] = useState(false);
   const [sortField, setSortField] = useState<SortField>('instrument');
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
+  const [sortFieldQuick, setSortFieldQuick] = useState<'instrument' | 'netChg' | 'dayChg'>('netChg');
+  const [sortDirectionQuick, setSortDirectionQuick] = useState<SortDirection>('desc');
+  const [quickViewMode, setQuickViewMode] = useState<'netChg' | 'dayChg'>('netChg');
+  const [quickViewLayout, setQuickViewLayout] = useState<'expanded' | 'minimal'>('expanded');
+  const [quickViewExpanded, setQuickViewExpanded] = useState(true);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
 
@@ -116,7 +121,7 @@ export default function HoldingsTable({ holdings: initialHoldings, totals: initi
   const sortedHoldings = [...searchedHoldings].sort((a, b) => {
     let aValue: number | string;
     let bValue: number | string;
-    
+
     switch (sortField) {
       case 'instrument':
         aValue = a.instrument.toLowerCase();
@@ -158,14 +163,48 @@ export default function HoldingsTable({ holdings: initialHoldings, totals: initi
         aValue = a.instrument.toLowerCase();
         bValue = b.instrument.toLowerCase();
     }
-    
+
     if (typeof aValue === 'string' && typeof bValue === 'string') {
-      return sortDirection === 'asc' 
+      return sortDirection === 'asc'
         ? aValue.localeCompare(bValue)
         : bValue.localeCompare(aValue);
     }
-    
-    return sortDirection === 'asc' 
+
+    return sortDirection === 'asc'
+      ? (aValue as number) - (bValue as number)
+      : (bValue as number) - (aValue as number);
+  });
+
+  // Quick view sorting
+  const sortedHoldingsQuick = [...searchedHoldings].sort((a, b) => {
+    let aValue: number | string;
+    let bValue: number | string;
+
+    switch (sortFieldQuick) {
+      case 'instrument':
+        aValue = a.instrument.toLowerCase();
+        bValue = b.instrument.toLowerCase();
+        break;
+      case 'netChg':
+        aValue = a.netChg;
+        bValue = b.netChg;
+        break;
+      case 'dayChg':
+        aValue = a.dayChg;
+        bValue = b.dayChg;
+        break;
+      default:
+        aValue = a.netChg;
+        bValue = b.netChg;
+    }
+
+    if (typeof aValue === 'string' && typeof bValue === 'string') {
+      return sortDirectionQuick === 'asc'
+        ? aValue.localeCompare(bValue)
+        : bValue.localeCompare(aValue);
+    }
+
+    return sortDirectionQuick === 'asc'
       ? (aValue as number) - (bValue as number)
       : (bValue as number) - (aValue as number);
   });
@@ -226,11 +265,29 @@ export default function HoldingsTable({ holdings: initialHoldings, totals: initi
     }
   };
 
+  const handleSortQuick = (field: 'instrument' | 'netChg' | 'dayChg') => {
+    if (sortFieldQuick === field) {
+      setSortDirectionQuick(prev => prev === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortFieldQuick(field);
+      setSortDirectionQuick('asc');
+    }
+  };
+
   const getSortIcon = (field: SortField) => {
     if (sortField !== field) {
       return <span className="text-gray-400">↕</span>;
     }
-    return sortDirection === 'asc' 
+    return sortDirection === 'asc'
+      ? <span className="text-blue-500">↑</span>
+      : <span className="text-blue-500">↓</span>;
+  };
+
+  const getSortIconQuick = (field: 'instrument' | 'netChg' | 'dayChg') => {
+    if (sortFieldQuick !== field) {
+      return <span className="text-gray-400">↕</span>;
+    }
+    return sortDirectionQuick === 'asc'
       ? <span className="text-blue-500">↑</span>
       : <span className="text-blue-500">↓</span>;
   };
@@ -639,6 +696,226 @@ export default function HoldingsTable({ holdings: initialHoldings, totals: initi
               </p>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Quick View - Only show when there's data */}
+      {holdings.length > 0 && (
+        <div className={`mb-6 rounded-lg border overflow-hidden ${
+          theme === 'dark'
+            ? 'bg-gray-800 border-gray-700'
+            : 'bg-white border-gray-200'
+        }`}>
+          <div className={`px-6 py-4 border-b flex justify-between items-center transition-colors ${
+            theme === 'dark' ? 'border-gray-700' : 'border-gray-200'
+          }`}>
+            <h2 className={`text-xl font-semibold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+              Quick View ({sortedHoldingsQuick.length} holdings)
+            </h2>
+            <button
+              onClick={() => setQuickViewExpanded(!quickViewExpanded)}
+              className={`px-3 py-2 rounded-md text-sm font-medium transition-colors flex items-center gap-2 ${
+                theme === 'dark'
+                  ? 'bg-gray-700 text-white hover:bg-gray-600'
+                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+              }`}
+            >
+              {quickViewExpanded ? 'Collapse' : 'Expand'}
+              <span className={`transform transition-transform duration-200 ${quickViewExpanded ? 'rotate-180' : ''}`}>
+                ▼
+              </span>
+            </button>
+          </div>
+
+          {quickViewExpanded && (
+            <div className="p-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
+                <div></div>
+            <div className="flex flex-col sm:flex-row gap-3">
+              {/* Layout Toggle */}
+              <div className="flex rounded-lg overflow-hidden border">
+                <button
+                  onClick={() => setQuickViewLayout('expanded')}
+                  className={`px-3 py-2 text-sm font-medium transition-colors ${
+                    quickViewLayout === 'expanded'
+                      ? theme === 'dark'
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-blue-600 text-white'
+                      : theme === 'dark'
+                        ? 'bg-gray-700 text-white hover:bg-gray-600'
+                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                  }`}
+                >
+                  Expanded
+                </button>
+                <button
+                  onClick={() => setQuickViewLayout('minimal')}
+                  className={`px-3 py-2 text-sm font-medium transition-colors ${
+                    quickViewLayout === 'minimal'
+                      ? theme === 'dark'
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-blue-600 text-white'
+                      : theme === 'dark'
+                        ? 'bg-gray-700 text-white hover:bg-gray-600'
+                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                  }`}
+                >
+                  Minimal
+                </button>
+              </div>
+
+              {/* Change Type Toggle */}
+              <div className="flex rounded-lg overflow-hidden border">
+                <button
+                  onClick={() => setQuickViewMode('netChg')}
+                  className={`px-3 py-2 text-sm font-medium transition-colors ${
+                    quickViewMode === 'netChg'
+                      ? theme === 'dark'
+                        ? 'bg-green-600 text-white'
+                        : 'bg-green-600 text-white'
+                      : theme === 'dark'
+                        ? 'bg-gray-700 text-white hover:bg-gray-600'
+                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                  }`}
+                >
+                  Net Change
+                </button>
+                <button
+                  onClick={() => setQuickViewMode('dayChg')}
+                  className={`px-3 py-2 text-sm font-medium transition-colors ${
+                    quickViewMode === 'dayChg'
+                      ? theme === 'dark'
+                        ? 'bg-green-600 text-white'
+                        : 'bg-green-600 text-white'
+                      : theme === 'dark'
+                        ? 'bg-gray-700 text-white hover:bg-gray-600'
+                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                  }`}
+                >
+                  Day Change
+                </button>
+              </div>
+
+              {/* Sort Controls */}
+              <div className="flex gap-2">
+                <button
+                  onClick={() => handleSortQuick('instrument')}
+                  className={`px-3 py-2 text-sm rounded-md transition-colors ${
+                    theme === 'dark'
+                      ? 'bg-gray-700 text-white hover:bg-gray-600'
+                      : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                  }`}
+                >
+                  Code {getSortIconQuick('instrument')}
+                </button>
+                <button
+                  onClick={() => handleSortQuick(quickViewMode)}
+                  className={`px-3 py-2 text-sm rounded-md transition-colors ${
+                    theme === 'dark'
+                      ? 'bg-gray-700 text-white hover:bg-gray-600'
+                      : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                  }`}
+                >
+                  {quickViewMode === 'netChg' ? 'Net Chg' : 'Day Chg'} {getSortIconQuick(quickViewMode)}
+                </button>
+              </div>
+            </div>
+          </div>
+
+              {quickViewLayout === 'minimal' ? (
+                <div className="flex flex-wrap gap-2">
+                  {sortedHoldingsQuick.map((holding) => (
+                    <div
+                      key={holding.instrument}
+                      className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-all ${
+                        theme === 'dark'
+                          ? 'bg-gray-700 text-white hover:bg-gray-600'
+                          : 'bg-gray-100 text-gray-900 hover:bg-gray-200'
+                      } ${holding.hidden ? 'opacity-50' : ''}`}
+                    >
+                      <span className="font-medium">{holding.instrument}</span>
+                      <span className={`font-semibold ${
+                        (quickViewMode === 'netChg' ? holding.netChg : holding.dayChg) >= 0
+                          ? 'text-green-600'
+                          : 'text-red-600'
+                      }`}>
+                        {(quickViewMode === 'netChg' ? holding.netChg : holding.dayChg).toFixed(2)}%
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
+                  {sortedHoldingsQuick.map((holding) => (
+                    <div
+                      key={holding.instrument}
+                      className={`rounded-lg border p-6 transition-all ${
+                        theme === 'dark'
+                          ? 'bg-gray-700 border-gray-600 hover:bg-gray-650'
+                          : 'bg-gray-50 border-gray-200 hover:bg-gray-100'
+                      } ${holding.hidden ? 'opacity-60' : ''}`}
+                    >
+                      <div className="flex items-start justify-between mb-3">
+                        <h3 className={`font-semibold text-xl ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+                          {holding.instrument}
+                        </h3>
+                        {holding.hidden && (
+                          <span className={`text-xs px-2 py-1 rounded-full ${
+                            theme === 'dark' ? 'bg-gray-600 text-gray-300' : 'bg-gray-200 text-gray-600'
+                          }`}>
+                            Hidden
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="space-y-3">
+                        <div className="flex justify-between items-center">
+                          <span className={`text-sm ${secondaryTextClasses}`}>Quantity</span>
+                          <span className={`font-medium ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+                            {holding.quantity}
+                          </span>
+                        </div>
+
+                        <div className="flex justify-between items-center">
+                          <span className={`text-sm ${secondaryTextClasses}`}>Current Value</span>
+                          <span className={`font-medium ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+                            ₹{holding.curVal.toFixed(2)}
+                          </span>
+                        </div>
+
+                        <div className="flex justify-between items-center">
+                          <span className={`text-sm ${secondaryTextClasses}`}>LTP</span>
+                          <span className={`font-medium ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+                            ₹{holding.ltp.toFixed(2)}
+                          </span>
+                        </div>
+
+                        <div className="flex justify-between items-center">
+                          <span className={`text-sm ${secondaryTextClasses}`}>
+                            {quickViewMode === 'netChg' ? 'Net Change' : 'Day Change'}
+                          </span>
+                          <span className={`font-bold text-xl ${
+                            (quickViewMode === 'netChg' ? holding.netChg : holding.dayChg) >= 0
+                              ? 'text-green-600'
+                              : 'text-red-600'
+                          }`}>
+                            {(quickViewMode === 'netChg' ? holding.netChg : holding.dayChg).toFixed(2)}%
+                          </span>
+                        </div>
+
+                        <div className="flex justify-between items-center">
+                          <span className={`text-sm ${secondaryTextClasses}`}>P&L</span>
+                          <span className={`font-semibold ${holding.pl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                            ₹{holding.pl.toFixed(2)}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 
