@@ -336,6 +336,7 @@ export default function HoldingsTable({ holdings: initialHoldings, totals: initi
   const [showExportModal, setShowExportModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
   const [copySuccess, setCopySuccess] = useState(false);
+  const [tableWidth, setTableWidth] = useState(80); // in rem, 7xl is about 80rem
 
   const exportData = () => {
     const data: StoredData = {
@@ -455,6 +456,8 @@ export default function HoldingsTable({ holdings: initialHoldings, totals: initi
 
         const avgCost = parseFloat(String(row[2] ?? 0)) || 0;
         const ltp = parseFloat(String(row[3] ?? 0)) || 0;
+        const netChg = parseFloat(String(row[7] ?? 0)) || 0;
+        const netChange = netChg / 100;
         newHoldings.push({
           instrument,
           quantity: parseFloat(String(row[1] ?? 0)) || 0,
@@ -463,12 +466,12 @@ export default function HoldingsTable({ holdings: initialHoldings, totals: initi
           invested: parseFloat(String(row[4] ?? 0)) || 0,
           curVal: parseFloat(String(row[5] ?? 0)) || 0,
           pl: parseFloat(String(row[6] ?? 0)) || 0,
-          netChg: parseFloat(String(row[7] ?? 0)) || 0,
+          netChg,
           dayChg: parseFloat(String(row[8] ?? 0)) || 0,
           tags: existingHolding?.tags || [],
           hidden: existingHolding?.hidden || false,
           customValue: ltp,
-          targetAvgCost: avgCost
+           targetAvgCost: avgCost * (1 + netChange / 2)
         });
       }
       
@@ -510,7 +513,7 @@ export default function HoldingsTable({ holdings: initialHoldings, totals: initi
     : 'text-gray-500';
 
   return (
-    <div className={`min-h-screen ${themeClasses} p-6 max-w-7xl mx-auto`}>
+    <div className={`min-h-screen ${themeClasses} p-6`} style={{ maxWidth: `${tableWidth}rem`, margin: '0 auto' }}>
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
         <div>
           <h1 className="text-3xl font-bold">Investment Holdings</h1>
@@ -559,9 +562,21 @@ export default function HoldingsTable({ holdings: initialHoldings, totals: initi
             {theme === 'dark' ? '☀️ Light' : '🌙 Dark'}
           </button>
         </div>
-      </div>
+        </div>
 
-      {/* Show message when no data is loaded */}
+        {/* Width Adjustment Progress Bar */}
+        <div className="mb-6">
+          <input
+            type="range"
+            min="20"
+            max="100"
+            value={tableWidth}
+            onChange={(e) => setTableWidth(Number(e.target.value))}
+            className={`w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700`}
+          />
+        </div>
+
+        {/* Show message when no data is loaded */}
       {holdings.length === 0 && (
         <div className={`text-center py-12 px-6 rounded-lg border-2 border-dashed ${
           theme === 'dark' 
@@ -978,7 +993,7 @@ export default function HoldingsTable({ holdings: initialHoldings, totals: initi
                           : 'bg-gray-100 text-gray-900 hover:bg-gray-200'
                       } ${holding.hidden ? 'opacity-50' : ''}`}
                     >
-                      <span className="font-medium">{holding.instrument}</span>
+                       <span className="font-medium">{holding.quantity} {holding.instrument}</span>
                       <span className={`font-semibold ${
                         (quickViewMode === 'netChg' ? holding.netChg : holding.dayChg) >= 0
                           ? 'text-green-600'
@@ -1176,12 +1191,12 @@ export default function HoldingsTable({ holdings: initialHoldings, totals: initi
                    />
                  </div>
                </div>
-               <div className="mb-3">
-                 <span className={`text-xs ${secondaryTextClasses}`}>Shares to Buy</span>
-                 <p className={`text-sm font-medium ${calculateSharesToBuy(holding) > 0 ? 'text-green-600' : 'text-red-600'}`}>
-                   {calculateSharesToBuy(holding)}
-                 </p>
-               </div>
+                <div className="mb-3">
+                  <span className={`text-xs ${secondaryTextClasses}`}>Shares to Buy</span>
+                  <p className={`text-sm font-medium ${calculateSharesToBuy(holding) > 0 ? 'text-green-600' : 'text-red-600'}`} title={`Margin needed: ₹${(holding.ltp * calculateSharesToBuy(holding)).toFixed(2)}`}>
+                    {calculateSharesToBuy(holding)}
+                  </p>
+                </div>
 
                {/* Tags Section */}
               <div>
@@ -1406,9 +1421,9 @@ export default function HoldingsTable({ holdings: initialHoldings, totals: initi
                        }`}
                      />
                    </td>
-                   <td className={`px-4 py-4 whitespace-nowrap text-sm font-medium ${calculateSharesToBuy(holding) > 0 ? 'text-green-600' : 'text-red-600'}`}>
-                     {calculateSharesToBuy(holding)}
-                   </td>
+                    <td className={`px-4 py-4 whitespace-nowrap text-sm font-medium ${calculateSharesToBuy(holding) > 0 ? 'text-green-600' : 'text-red-600'}`} title={`Margin needed: ₹${(holding.ltp * calculateSharesToBuy(holding)).toFixed(2)}`}>
+                      {calculateSharesToBuy(holding)}
+                    </td>
                    <td className={`px-4 py-4 text-sm ${secondaryTextClasses} max-w-xs`}>
                     <div className="space-y-2">
                       <div className="flex flex-wrap gap-1">
