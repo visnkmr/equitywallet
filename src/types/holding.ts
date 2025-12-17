@@ -10,6 +10,8 @@ export interface Holding {
   dayChg: number;
   tags: string[];
   hidden: boolean;
+  customValue: number;
+  targetAvgCost: number;
 }
 
 export interface Totals {

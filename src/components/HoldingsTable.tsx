@@ -71,7 +71,9 @@ export default function HoldingsTable({ holdings: initialHoldings, totals: initi
           setHoldings(data.holdings.map(holding => ({
             ...holding,
             hidden: data.hiddenInstruments.includes(holding.instrument),
-            tags: data.instrumentTags[holding.instrument] || []
+            tags: data.instrumentTags[holding.instrument] || [],
+            customValue: holding.customValue ?? holding.ltp,
+            targetAvgCost: holding.targetAvgCost ?? holding.avgCost
           })));
         }
         setTheme(data.theme || 'light');
@@ -254,6 +256,15 @@ export default function HoldingsTable({ holdings: initialHoldings, totals: initi
     );
   }
 
+  function calculateSharesToBuy(holding: Holding): number {
+    const { quantity, avgCost, customValue, targetAvgCost } = holding;
+    if (customValue === targetAvgCost) return 0;
+    const numerator = (targetAvgCost * quantity) - (avgCost * quantity);
+    const denominator = customValue - targetAvgCost;
+    const shares = numerator / denominator;
+    return Math.ceil(shares); // Round up to next whole share
+  }
+
   if (totals.invested > 0) {
     totals.plPercent = (totals.pl / totals.invested) * 100;
   }
@@ -405,6 +416,18 @@ export default function HoldingsTable({ holdings: initialHoldings, totals: initi
     setTheme(prev => prev === 'light' ? 'dark' : 'light');
   };
 
+  const updateCustomValue = (instrument: string, value: number) => {
+    setHoldings(prev => prev.map(h =>
+      h.instrument === instrument ? { ...h, customValue: value } : h
+    ));
+  };
+
+  const updateTargetAvgCost = (instrument: string, value: number) => {
+    setHoldings(prev => prev.map(h =>
+      h.instrument === instrument ? { ...h, targetAvgCost: value } : h
+    ));
+  };
+
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -415,7 +438,7 @@ export default function HoldingsTable({ holdings: initialHoldings, totals: initi
       const data = await file.arrayBuffer();
       const workbook = XLSX.read(data);
       const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-      const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
+      const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as (string | number | null)[][];
       
       const newHoldings: Holding[] = [];
       
@@ -423,24 +446,29 @@ export default function HoldingsTable({ holdings: initialHoldings, totals: initi
         const row = jsonData[i];
         if (!row || row.length < 9) continue;
         
-        const instrument = String(row[0] || '').replace(/"/g, '');
+        const row0 = row[0] ?? '';
+        const instrument = String(row0).replace(/"/g, '');
         if (!instrument) continue;
-        
+
         // Get existing hidden state and tags from current holdings
         const existingHolding = holdings.find(h => h.instrument === instrument);
-        
+
+        const avgCost = parseFloat(String(row[2] ?? 0)) || 0;
+        const ltp = parseFloat(String(row[3] ?? 0)) || 0;
         newHoldings.push({
           instrument,
-          quantity: parseFloat(row[1]) || 0,
-          avgCost: parseFloat(row[2]) || 0,
-          ltp: parseFloat(row[3]) || 0,
-          invested: parseFloat(row[4]) || 0,
-          curVal: parseFloat(row[5]) || 0,
-          pl: parseFloat(row[6]) || 0,
-          netChg: parseFloat(row[7]) || 0,
-          dayChg: parseFloat(row[8]) || 0,
+          quantity: parseFloat(String(row[1] ?? 0)) || 0,
+          avgCost,
+          ltp,
+          invested: parseFloat(String(row[4] ?? 0)) || 0,
+          curVal: parseFloat(String(row[5] ?? 0)) || 0,
+          pl: parseFloat(String(row[6] ?? 0)) || 0,
+          netChg: parseFloat(String(row[7] ?? 0)) || 0,
+          dayChg: parseFloat(String(row[8] ?? 0)) || 0,
           tags: existingHolding?.tags || [],
-          hidden: existingHolding?.hidden || false
+          hidden: existingHolding?.hidden || false,
+          customValue: ltp,
+          targetAvgCost: avgCost
         });
       }
       
@@ -1101,23 +1129,61 @@ export default function HoldingsTable({ holdings: initialHoldings, totals: initi
                 </div>
               </div>
 
-              {/* Changes Row */}
-              <div className="flex justify-between mb-3">
-                <div className="flex-1">
-                  <span className={`text-xs ${secondaryTextClasses}`}>Net Change</span>
-                  <p className={`text-sm font-medium ${holding.netChg >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    {holding.netChg.toFixed(2)}%
-                  </p>
-                </div>
-                <div className="flex-1">
-                  <span className={`text-xs ${secondaryTextClasses}`}>Day Change</span>
-                  <p className={`text-sm font-medium ${holding.dayChg >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    {holding.dayChg.toFixed(2)}%
-                  </p>
-                </div>
-              </div>
+               {/* Changes Row */}
+               <div className="flex justify-between mb-3">
+                 <div className="flex-1">
+                   <span className={`text-xs ${secondaryTextClasses}`}>Net Change</span>
+                   <p className={`text-sm font-medium ${holding.netChg >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                     {holding.netChg.toFixed(2)}%
+                   </p>
+                 </div>
+                 <div className="flex-1">
+                   <span className={`text-xs ${secondaryTextClasses}`}>Day Change</span>
+                   <p className={`text-sm font-medium ${holding.dayChg >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                     {holding.dayChg.toFixed(2)}%
+                   </p>
+                 </div>
+               </div>
 
-              {/* Tags Section */}
+               {/* Averaging Section */}
+               <div className="grid grid-cols-2 gap-3 mb-3">
+                 <div>
+                   <span className={`text-xs ${secondaryTextClasses}`}>Custom Value</span>
+                   <input
+                     type="number"
+                     step="0.01"
+                     value={holding.customValue}
+                     onChange={(e) => updateCustomValue(holding.instrument, parseFloat(e.target.value) || 0)}
+                     className={`w-full mt-1 px-2 py-1 text-xs border rounded focus:outline-none focus:ring-1 focus:ring-blue-500 ${
+                       theme === 'dark'
+                         ? 'border-gray-600 bg-gray-700 text-white'
+                         : 'border-gray-300 bg-white text-gray-900'
+                     }`}
+                   />
+                 </div>
+                 <div>
+                   <span className={`text-xs ${secondaryTextClasses}`}>Target Avg Cost</span>
+                   <input
+                     type="number"
+                     step="0.01"
+                     value={holding.targetAvgCost}
+                     onChange={(e) => updateTargetAvgCost(holding.instrument, parseFloat(e.target.value) || 0)}
+                     className={`w-full mt-1 px-2 py-1 text-xs border rounded focus:outline-none focus:ring-1 focus:ring-blue-500 ${
+                       theme === 'dark'
+                         ? 'border-gray-600 bg-gray-700 text-white'
+                         : 'border-gray-300 bg-white text-gray-900'
+                     }`}
+                   />
+                 </div>
+               </div>
+               <div className="mb-3">
+                 <span className={`text-xs ${secondaryTextClasses}`}>Shares to Buy</span>
+                 <p className={`text-sm font-medium ${calculateSharesToBuy(holding) > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                   {calculateSharesToBuy(holding)}
+                 </p>
+               </div>
+
+               {/* Tags Section */}
               <div>
                 <span className={`text-xs ${secondaryTextClasses}`}>Tags</span>
                 <div className="mt-1 space-y-2">
@@ -1244,34 +1310,19 @@ export default function HoldingsTable({ holdings: initialHoldings, totals: initi
                      {getSortIcon('netChg')}
                    </div>
                  </th>
-                 <th
-                   className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider cursor-pointer hover:bg-opacity-80 min-w-[100px]"
-                   onClick={() => handleSort('dayChg')}
-                 >
-                   <div className="flex items-center gap-1">
-                     Day Chg %
-                     {getSortIcon('dayChg')}
-                   </div>
-                 </th>
-                <th 
-                  className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider cursor-pointer hover:bg-opacity-80"
-                  onClick={() => handleSort('netChg')}
-                >
-                  <div className="flex items-center gap-1">
-                    Net Chg %
-                    {getSortIcon('netChg')}
-                  </div>
-                </th>
-                <th 
-                  className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider cursor-pointer hover:bg-opacity-80"
-                  onClick={() => handleSort('dayChg')}
-                >
-                  <div className="flex items-center gap-1">
-                    Day Chg %
-                    {getSortIcon('dayChg')}
-                  </div>
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider min-w-[250px]">Tags</th>
+                  <th
+                    className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider cursor-pointer hover:bg-opacity-80 min-w-[100px]"
+                    onClick={() => handleSort('dayChg')}
+                  >
+                    <div className="flex items-center gap-1">
+                      Day Chg %
+                      {getSortIcon('dayChg')}
+                    </div>
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider min-w-[100px]">Custom Value</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider min-w-[100px]">Target Avg Cost</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider min-w-[100px]">Shares to Buy</th>
+                 <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider min-w-[250px]">Tags</th>
               </tr>
             </thead>
             <tbody>
@@ -1326,10 +1377,39 @@ export default function HoldingsTable({ holdings: initialHoldings, totals: initi
                   <td className={`px-4 py-4 whitespace-nowrap text-sm ${holding.netChg >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                     {holding.netChg.toFixed(2)}%
                   </td>
-                  <td className={`px-4 py-4 whitespace-nowrap text-sm ${holding.dayChg >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    {holding.dayChg.toFixed(2)}%
-                  </td>
-                  <td className={`px-4 py-4 text-sm ${secondaryTextClasses} max-w-xs`}>
+                   <td className={`px-4 py-4 whitespace-nowrap text-sm ${holding.dayChg >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                     {holding.dayChg.toFixed(2)}%
+                   </td>
+                   <td className={`px-4 py-4 whitespace-nowrap text-sm ${secondaryTextClasses}`}>
+                     <input
+                       type="number"
+                       step="0.01"
+                       value={holding.customValue}
+                       onChange={(e) => updateCustomValue(holding.instrument, parseFloat(e.target.value) || 0)}
+                       className={`w-full px-2 py-1 text-xs border rounded focus:outline-none focus:ring-1 focus:ring-blue-500 ${
+                         theme === 'dark'
+                           ? 'border-gray-600 bg-gray-700 text-white'
+                           : 'border-gray-300 bg-white text-gray-900'
+                       }`}
+                     />
+                   </td>
+                   <td className={`px-4 py-4 whitespace-nowrap text-sm ${secondaryTextClasses}`}>
+                     <input
+                       type="number"
+                       step="0.01"
+                       value={holding.targetAvgCost}
+                       onChange={(e) => updateTargetAvgCost(holding.instrument, parseFloat(e.target.value) || 0)}
+                       className={`w-full px-2 py-1 text-xs border rounded focus:outline-none focus:ring-1 focus:ring-blue-500 ${
+                         theme === 'dark'
+                           ? 'border-gray-600 bg-gray-700 text-white'
+                           : 'border-gray-300 bg-white text-gray-900'
+                       }`}
+                     />
+                   </td>
+                   <td className={`px-4 py-4 whitespace-nowrap text-sm font-medium ${calculateSharesToBuy(holding) > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                     {calculateSharesToBuy(holding)}
+                   </td>
+                   <td className={`px-4 py-4 text-sm ${secondaryTextClasses} max-w-xs`}>
                     <div className="space-y-2">
                       <div className="flex flex-wrap gap-1">
                         {holding.tags.map((tag) => (

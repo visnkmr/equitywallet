@@ -18,7 +18,7 @@ export function parseHoldingsCSV(): Holding[] {
     let current = '';
     let inQuotes = false;
     
-    for (let char of line) {
+    for (const char of line) {
       if (char === '"') {
         inQuotes = !inQuotes;
       } else if (char === ',' && !inQuotes) {
@@ -31,18 +31,22 @@ export function parseHoldingsCSV(): Holding[] {
     fields.push(current.trim());
     
     if (fields.length >= 9) {
+      const avgCost = parseFloat(fields[2]) || 0;
+      const ltp = parseFloat(fields[3]) || 0;
       holdings.push({
         instrument: fields[0].replace(/"/g, ''),
         quantity: parseFloat(fields[1]) || 0,
-        avgCost: parseFloat(fields[2]) || 0,
-        ltp: parseFloat(fields[3]) || 0,
+        avgCost,
+        ltp,
         invested: parseFloat(fields[4]) || 0,
         curVal: parseFloat(fields[5]) || 0,
         pl: parseFloat(fields[6]) || 0,
         netChg: parseFloat(fields[7]) || 0,
         dayChg: parseFloat(fields[8]) || 0,
         tags: [],
-        hidden: false
+        hidden: false,
+        customValue: ltp,
+        targetAvgCost: avgCost
       });
     }
   }
