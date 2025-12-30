@@ -19,7 +19,7 @@ interface HoldingsTableProps {
 type SortField = 'instrument' | 'quantity' | 'avgCost' | 'ltp' | 'invested' | 'curVal' | 'pl' | 'netChg' | 'dayChg';
 type SortDirection = 'asc' | 'desc';
 
-export default function HoldingsTable({ holdings: initialHoldings, totals: initialTotals }: HoldingsTableProps) {
+export default function HoldingsTable({ holdings: _initialHoldings, totals: _initialTotals }: HoldingsTableProps) {
   const [holdings, setHoldings] = useState<Holding[]>([]);
   const [selectedTag, setSelectedTag] = useState<string>('');
   const [newTagInputs, setNewTagInputs] = useState<Record<string, string>>({});
@@ -127,7 +127,7 @@ export default function HoldingsTable({ holdings: initialHoldings, totals: initi
       hiddenQuickViewTags
     };
     localStorage.setItem('holdingsData', JSON.stringify(data));
-  }, [holdings, theme]);
+  }, [holdings, theme, hiddenQuickViewTags]);
 
   const filteredHoldings = selectedTag 
     ? holdings.filter(h => h.tags.includes(selectedTag))
@@ -453,7 +453,7 @@ export default function HoldingsTable({ holdings: initialHoldings, totals: initi
       await navigator.clipboard.writeText(exportJson);
       setCopySuccess(true);
       setTimeout(() => setCopySuccess(false), 2000);
-    } catch (error) {
+    } catch {
       alert('Failed to copy to clipboard. Please copy manually.');
     }
   };
@@ -483,10 +483,7 @@ export default function HoldingsTable({ holdings: initialHoldings, totals: initi
     });
   };
 
-  const selectAllVisible = () => {
-    const visibleInstruments = sortedHoldings.map(h => h.instrument);
-    setSelectedInstruments(new Set(visibleInstruments));
-  };
+  
 
   const clearSelection = () => {
     setSelectedInstruments(new Set());
@@ -511,19 +508,7 @@ export default function HoldingsTable({ holdings: initialHoldings, totals: initi
     setBulkSelectionMode(false);
   };
 
-  const removeBulkTag = (tagToRemove: string) => {
-    if (selectedInstruments.size === 0) return;
-
-    setHoldings(prev => prev.map(holding => {
-      if (selectedInstruments.has(holding.instrument)) {
-        return { 
-          ...holding, 
-          tags: holding.tags.filter(t => t !== tagToRemove) 
-        };
-      }
-      return holding;
-    }));
-  };
+  
 
   const toggleTheme = () => {
     setTheme(prev => prev === 'light' ? 'dark' : 'light');
@@ -1199,7 +1184,7 @@ export default function HoldingsTable({ holdings: initialHoldings, totals: initi
               </p>
             </div>
             <div>
-              <p className={`text-sm ${secondaryTextClasses}`}>Day's Change</p>
+              <p className={`text-sm ${secondaryTextClasses}`}>Day&apos;s Change</p>
               <p className={`text-2xl font-bold ${allHoldingsTotals.dayChg >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                 {allHoldingsTotals.dayChg.toFixed(2)}%
               </p>
