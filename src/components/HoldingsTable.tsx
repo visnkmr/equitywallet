@@ -37,6 +37,9 @@ export default function HoldingsTable({ holdings: initialHoldings, totals: initi
   const [showTagDropdown, setShowTagDropdown] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [bulkSelectionMode, setBulkSelectionMode] = useState(false);
+  const [selectedInstruments, setSelectedInstruments] = useState<Set<string>>(new Set());
+  const [bulkTagInput, setBulkTagInput] = useState('');
 
   // Detect mobile screen size
   useEffect(() => {
@@ -429,8 +432,64 @@ export default function HoldingsTable({ holdings: initialHoldings, totals: initi
       setSelectedTag('');
       setSearchTerm('');
       setHiddenQuickViewTags([]);
+      setSelectedInstruments(new Set());
+      setBulkSelectionMode(false);
       alert('All data has been cleared.');
     }
+  };
+
+  const toggleBulkSelection = (instrument: string) => {
+    setSelectedInstruments(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(instrument)) {
+        newSet.delete(instrument);
+      } else {
+        newSet.add(instrument);
+      }
+      return newSet;
+    });
+  };
+
+  const selectAllVisible = () => {
+    const visibleInstruments = sortedHoldings.map(h => h.instrument);
+    setSelectedInstruments(new Set(visibleInstruments));
+  };
+
+  const clearSelection = () => {
+    setSelectedInstruments(new Set());
+  };
+
+  const addBulkTag = () => {
+    const tagValue = bulkTagInput.trim();
+    if (!tagValue || selectedInstruments.size === 0) return;
+
+    setHoldings(prev => prev.map(holding => {
+      if (selectedInstruments.has(holding.instrument)) {
+        const existingTags = holding.tags || [];
+        if (!existingTags.includes(tagValue)) {
+          return { ...holding, tags: [...existingTags, tagValue] };
+        }
+      }
+      return holding;
+    }));
+
+    setBulkTagInput('');
+    clearSelection();
+    setBulkSelectionMode(false);
+  };
+
+  const removeBulkTag = (tagToRemove: string) => {
+    if (selectedInstruments.size === 0) return;
+
+    setHoldings(prev => prev.map(holding => {
+      if (selectedInstruments.has(holding.instrument)) {
+        return { 
+          ...holding, 
+          tags: holding.tags.filter(t => t !== tagToRemove) 
+        };
+      }
+      return holding;
+    }));
   };
 
   const toggleTheme = () => {
@@ -719,6 +778,113 @@ export default function HoldingsTable({ holdings: initialHoldings, totals: initi
       {/* Search and Filter - Only show when there's data */}
       {holdings.length > 0 && (
         <div className="mb-6 space-y-4">
+          {/* Bulk Selection Controls */}
+          <div className={`rounded-lg border p-4 ${
+            theme === 'dark' 
+              ? 'border-gray-700 bg-gray-800' 
+              : 'border-gray-200 bg-gray-50'
+          }`}>
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => {
+                    setBulkSelectionMode(!bulkSelectionMode);
+                    if (bulkSelectionMode) {
+                      clearSelection();
+                    }
+                  }}
+                  className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                    bulkSelectionMode
+                      ? 'bg-blue-600 text-white hover:bg-blue-700'
+                      : theme === 'dark'
+                        ? 'bg-gray-700 text-white hover:bg-gray-600'
+                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                  }`}
+                >
+                  {bulkSelectionMode ? '✓ Bulk Mode On' : '☑ Bulk Select'}
+                </button>
+                
+                {bulkSelectionMode && (
+                  <>
+                    <button
+                      onClick={selectAllVisible}
+                      className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                        theme === 'dark'
+                          ? 'bg-gray-700 text-white hover:bg-gray-600'
+                          : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                      }`}
+                    >
+                      Select All ({sortedHoldings.length})
+                    </button>
+                    <button
+                      onClick={clearSelection}
+                      className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                        theme === 'dark'
+                          ? 'bg-gray-700 text-white hover:bg-gray-600'
+                          : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                      }`}
+                    >
+                      Clear Selection
+                    </button>
+                    <span className={`text-sm ${secondaryTextClasses}`}>
+                      {selectedInstruments.size} selected
+                    </span>
+                  </>
+                )}
+              </div>
+
+              {bulkSelectionMode && selectedInstruments.size > 0 && (
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={bulkTagInput}
+                    onChange={(e) => setBulkTagInput(e.target.value)}
+                    placeholder="Enter tag to add..."
+                    className={`px-3 py-2 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                      theme === 'dark'
+                        ? 'border-gray-600 bg-gray-700 text-white placeholder-gray-400'
+                        : 'border-gray-300 bg-white text-gray-900 placeholder-gray-500'
+                    }`}
+                    onKeyPress={(e) => e.key === 'Enter' && addBulkTag()}
+                  />
+                  <button
+                    onClick={addBulkTag}
+                    className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium text-sm"
+                  >
+                    Add Tag
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Selected instruments display */}
+            {bulkSelectionMode && selectedInstruments.size > 0 && (
+              <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700">
+                <p className={`text-sm ${secondaryTextClasses} mb-2`}>Selected instruments:</p>
+                <div className="flex flex-wrap gap-2">
+                  {Array.from(selectedInstruments).map(instrument => (
+                    <span
+                      key={instrument}
+                      className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                        theme === 'dark'
+                          ? 'bg-blue-900 text-blue-300'
+                          : 'bg-blue-100 text-blue-800'
+                      }`}
+                    >
+                      {instrument}
+                      <button
+                        onClick={() => toggleBulkSelection(instrument)}
+                        className={`ml-1 ${theme === 'dark' ? 'text-blue-400 hover:text-blue-200' : 'text-blue-600 hover:text-blue-800'}`}
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* Search Bar */}
           <div>
             <label className={`block text-sm font-medium ${textClasses} mb-2`}>Search Instruments</label>
@@ -1256,10 +1422,20 @@ export default function HoldingsTable({ holdings: initialHoldings, totals: initi
                 theme === 'dark' 
                   ? 'bg-gray-800 border-gray-700' 
                   : 'bg-white border-gray-200'
-              } ${holding.hidden ? 'opacity-50' : ''}`}
+              } ${holding.hidden ? 'opacity-50' : ''} ${selectedInstruments.has(holding.instrument) ? (theme === 'dark' ? 'border-blue-600 bg-blue-900' : 'border-blue-400 bg-blue-50') : ''}`}
             >
               {/* Header with Instrument and Action */}
               <div className="flex justify-between items-start mb-3">
+                {bulkSelectionMode && (
+                  <div className="flex items-center mr-2">
+                    <input
+                      type="checkbox"
+                      checked={selectedInstruments.has(holding.instrument)}
+                      onChange={() => toggleBulkSelection(holding.instrument)}
+                      className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                    />
+                  </div>
+                )}
                 <div className="flex-1">
                   <h3 className="font-semibold text-lg">{holding.instrument}</h3>
                   <div className="flex items-center gap-2 mt-1">
@@ -1419,6 +1595,11 @@ export default function HoldingsTable({ holdings: initialHoldings, totals: initi
           <table className={`min-w-full divide-y ${theme === 'dark' ? 'divide-gray-700' : 'divide-gray-200'}`}>
             <thead className={headerClasses}>
               <tr>
+                {bulkSelectionMode && (
+                  <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">
+                    Select
+                  </th>
+                )}
                 <th 
                   className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider cursor-pointer hover:bg-opacity-80"
                   onClick={() => handleSort('instrument')}
@@ -1516,7 +1697,17 @@ export default function HoldingsTable({ holdings: initialHoldings, totals: initi
                   theme === 'dark' 
                     ? 'bg-gray-800' 
                     : 'bg-white'
-                }`}>
+                } ${selectedInstruments.has(holding.instrument) ? (theme === 'dark' ? 'bg-blue-900' : 'bg-blue-50') : ''}`}>
+                   {bulkSelectionMode && (
+                     <td className="px-4 py-4 whitespace-nowrap text-sm">
+                       <input
+                         type="checkbox"
+                         checked={selectedInstruments.has(holding.instrument)}
+                         onChange={() => toggleBulkSelection(holding.instrument)}
+                         className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                       />
+                     </td>
+                   )}
                    <td className="px-4 py-4 whitespace-nowrap text-sm font-medium">
                     <div className="flex items-center gap-2">
                       <span>{holding.instrument}</span>
