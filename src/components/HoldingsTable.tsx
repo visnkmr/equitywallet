@@ -40,6 +40,8 @@ export default function HoldingsTable({ holdings: initialHoldings, totals: initi
   const [bulkSelectionMode, setBulkSelectionMode] = useState(false);
   const [selectedInstruments, setSelectedInstruments] = useState<Set<string>>(new Set());
   const [bulkTagInput, setBulkTagInput] = useState('');
+  const [portfolioSearch, setPortfolioSearch] = useState('');
+  const [showUntaggedInBulk, setShowUntaggedInBulk] = useState(false);
 
   // Detect mobile screen size
   useEffect(() => {
@@ -255,16 +257,47 @@ export default function HoldingsTable({ holdings: initialHoldings, totals: initi
     tagTotals[tag] = calculateTotals(holdingsWithTag);
   });
 
+  const allHoldingsTotals = calculateTotals(holdings);
+
+  // Filter holdings for bulk select with search and untagged filter
+  const bulkFilterHoldings = () => {
+    return sortedHoldings.filter(holding => {
+      const matchesSearch = portfolioSearch === '' || 
+        holding.instrument.toLowerCase().includes(portfolioSearch.toLowerCase()) ||
+        holding.tags.some(tag => tag.toLowerCase().includes(portfolioSearch.toLowerCase()));
+      
+      const matchesUntaggedFilter = !showUntaggedInBulk || holding.tags.length === 0;
+      
+      return matchesSearch && matchesUntaggedFilter;
+    });
+  };
+
   function calculateTotals(holdings: Holding[]): Totals {
-    return holdings.reduce(
+    // Filter out holdings with zero current value
+    const validHoldings = holdings.filter(h => h.curVal > 0);
+    
+    const totals = validHoldings.reduce(
       (acc, h) => ({
         invested: acc.invested + h.invested,
         curVal: acc.curVal + h.curVal,
         pl: acc.pl + h.pl,
-        plPercent: 0
+        plPercent: 0,
+        dayChg: acc.dayChg + (h.dayChg * h.invested / 100)
       }),
-      { invested: 0, curVal: 0, pl: 0, plPercent: 0 }
+      { invested: 0, curVal: 0, pl: 0, plPercent: 0, dayChg: 0 }
     );
+    
+    // Calculate day change percentage based on total invested
+    if (totals.invested > 0) {
+      totals.dayChg = (totals.dayChg / totals.invested) * 100;
+    }
+    
+    // Calculate P&L percentage based on total invested
+    if (totals.invested > 0) {
+      totals.plPercent = (totals.pl / totals.invested) * 100;
+    }
+    
+    return totals;
   }
 
   function calculateSharesToBuy(holding: Holding): number {
@@ -807,14 +840,14 @@ export default function HoldingsTable({ holdings: initialHoldings, totals: initi
                 {bulkSelectionMode && (
                   <>
                     <button
-                      onClick={selectAllVisible}
+                      onClick={() => setSelectedInstruments(new Set(bulkFilterHoldings().map(h => h.instrument)))}
                       className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
                         theme === 'dark'
                           ? 'bg-gray-700 text-white hover:bg-gray-600'
                           : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                       }`}
                     >
-                      Select All ({sortedHoldings.length})
+                      Select All ({bulkFilterHoldings().length})
                     </button>
                     <button
                       onClick={clearSelection}
@@ -853,6 +886,46 @@ export default function HoldingsTable({ holdings: initialHoldings, totals: initi
                   >
                     Add Tag
                   </button>
+                </div>
+              )}
+
+              {/* Search and Untagged Filter for Bulk Selection */}
+              {bulkSelectionMode && (
+                <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center pt-3 border-t border-gray-200 dark:border-gray-700">
+                  <div className="flex-1">
+                    <input
+                      type="text"
+                      value={portfolioSearch}
+                      onChange={(e) => setPortfolioSearch(e.target.value)}
+                      placeholder="Search holdings for bulk selection..."
+                      className={`w-full px-3 py-2 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                        theme === 'dark'
+                          ? 'border-gray-600 bg-gray-700 text-white placeholder-gray-400'
+                          : 'border-gray-300 bg-white text-gray-900 placeholder-gray-500'
+                      }`}
+                    />
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <label className={`flex items-center gap-2 cursor-pointer ${textClasses}`}>
+                      <input
+                        type="checkbox"
+                        checked={showUntaggedInBulk}
+                        onChange={(e) => setShowUntaggedInBulk(e.target.checked)}
+                        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                      />
+                      <span className="text-sm font-medium">Show Untagged Only</span>
+                    </label>
+                    <button
+                      onClick={() => setSelectedInstruments(new Set(bulkFilterHoldings().map(h => h.instrument)))}
+                      className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                        theme === 'dark'
+                          ? 'bg-gray-700 text-white hover:bg-gray-600'
+                          : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                      }`}
+                    >
+                      Select Filtered ({bulkFilterHoldings().length})
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
@@ -1087,6 +1160,56 @@ export default function HoldingsTable({ holdings: initialHoldings, totals: initi
               )}
             </div>
           )}
+        </div>
+      )}
+
+      {/* Complete Portfolio Summary - All Holdings Including Excluded */}
+      {holdings.length > 0 && (
+        <div className={`mt-8 rounded-lg shadow-md border p-6 ${
+          theme === 'dark' 
+            ? 'bg-gray-800 border-gray-700' 
+            : 'bg-white border-gray-200'
+        }`}>
+          <h2 className={`text-xl font-semibold mb-4 ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+            📊 Complete Portfolio Summary (All Holdings)
+          </h2>
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+            <div>
+              <p className={`text-sm ${secondaryTextClasses}`}>Total Invested</p>
+              <p className={`text-2xl font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+                ₹{allHoldingsTotals.invested.toFixed(2)}
+              </p>
+            </div>
+            <div>
+              <p className={`text-sm ${secondaryTextClasses}`}>Current Value</p>
+              <p className={`text-2xl font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+                ₹{allHoldingsTotals.curVal.toFixed(2)}
+              </p>
+            </div>
+            <div>
+              <p className={`text-sm ${secondaryTextClasses}`}>Total P&L</p>
+              <p className={`text-2xl font-bold ${allHoldingsTotals.pl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                ₹{allHoldingsTotals.pl.toFixed(2)}
+              </p>
+            </div>
+            <div>
+              <p className={`text-sm ${secondaryTextClasses}`}>P&L %</p>
+              <p className={`text-2xl font-bold ${allHoldingsTotals.plPercent >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                {allHoldingsTotals.plPercent.toFixed(2)}%
+              </p>
+            </div>
+            <div>
+              <p className={`text-sm ${secondaryTextClasses}`}>Day's Change</p>
+              <p className={`text-2xl font-bold ${allHoldingsTotals.dayChg >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                {allHoldingsTotals.dayChg.toFixed(2)}%
+              </p>
+            </div>
+          </div>
+          <div className={`mt-4 pt-4 border-t ${theme === 'dark' ? 'border-gray-700' : 'border-gray-200'}`}>
+            <p className={`text-sm ${secondaryTextClasses}`}>
+              {holdings.length} total holdings • {holdings.filter(h => !h.hidden).length} visible • {holdings.filter(h => h.hidden).length} excluded
+            </p>
+          </div>
         </div>
       )}
 

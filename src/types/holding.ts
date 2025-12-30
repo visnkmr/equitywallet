@@ -19,4 +19,5 @@ export interface Totals {
   curVal: number;
   pl: number;
   plPercent: number;
+  dayChg: number;
 }
