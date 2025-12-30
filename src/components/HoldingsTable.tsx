@@ -242,7 +242,15 @@ export default function HoldingsTable({ holdings: initialHoldings, totals: initi
     ? calculateTotals(sortedHoldings.filter(h => !h.hidden))
     : calculateTotals(holdings.filter(h => !h.hidden));
 
+  const hiddenTotals = calculateTotals(holdings.filter(h => h.hidden));
+
   const allTags = Array.from(new Set(holdings.flatMap(h => h.tags)));
+
+  const tagTotals: Record<string, Totals> = {};
+  allTags.forEach(tag => {
+    const holdingsWithTag = holdings.filter(h => h.tags.includes(tag));
+    tagTotals[tag] = calculateTotals(holdingsWithTag);
+  });
 
   function calculateTotals(holdings: Holding[]): Totals {
     return holdings.reduce(
@@ -268,6 +276,16 @@ export default function HoldingsTable({ holdings: initialHoldings, totals: initi
   if (totals.invested > 0) {
     totals.plPercent = (totals.pl / totals.invested) * 100;
   }
+
+  if (hiddenTotals.invested > 0) {
+    hiddenTotals.plPercent = (hiddenTotals.pl / hiddenTotals.invested) * 100;
+  }
+
+  Object.values(tagTotals).forEach(tagTotal => {
+    if (tagTotal.invested > 0) {
+      tagTotal.plPercent = (tagTotal.pl / tagTotal.invested) * 100;
+    }
+  });
 
   const toggleHidden = (instrument: string) => {
     setHoldings(prev => prev.map(h => 
@@ -337,6 +355,8 @@ export default function HoldingsTable({ holdings: initialHoldings, totals: initi
   const [showImportModal, setShowImportModal] = useState(false);
   const [copySuccess, setCopySuccess] = useState(false);
   const [tableWidth, setTableWidth] = useState(80); // in rem, 7xl is about 80rem
+  const [excludedExpanded, setExcludedExpanded] = useState(false);
+  const [tagsExpanded, setTagsExpanded] = useState(false);
 
   const exportData = () => {
     const data: StoredData = {
@@ -689,9 +709,11 @@ export default function HoldingsTable({ holdings: initialHoldings, totals: initi
                   <span className="font-medium">Theme:</span> {theme === 'dark' ? 'Dark' : 'Light'}
                 </div>
               </div>
-            </div>
-          </div>
-        )}
+           </div>
+
+
+         </div>
+       )}
       </div>
 
       {/* Search and Filter - Only show when there's data */}
@@ -736,46 +758,175 @@ export default function HoldingsTable({ holdings: initialHoldings, totals: initi
 
       {/* Totals Summary - Only show when there's data */}
       {holdings.length > 0 && (
-        <div className={`mb-6 rounded-lg shadow-md border p-6 ${
-          theme === 'dark' 
-            ? 'bg-gray-800 border-gray-700' 
-            : 'bg-white border-gray-200'
-        }`}>
-          <h2 className={`text-xl font-semibold mb-4 ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-            Portfolio Summary
-          </h2>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div>
-              <p className={`text-sm ${secondaryTextClasses}`}>Total Invested</p>
-              <p className={`text-2xl font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-                ₹{totals.invested.toFixed(2)}
-              </p>
-            </div>
-            <div>
-              <p className={`text-sm ${secondaryTextClasses}`}>Current Value</p>
-              <p className={`text-2xl font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-                ₹{totals.curVal.toFixed(2)}
-              </p>
-            </div>
-            <div>
-              <p className={`text-sm ${secondaryTextClasses}`}>Total P&L</p>
-              <p className={`text-2xl font-bold ${totals.pl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                ₹{totals.pl.toFixed(2)}
-              </p>
-            </div>
-            <div>
-              <p className={`text-sm ${secondaryTextClasses}`}>P&L %</p>
-              <p className={`text-2xl font-bold ${totals.plPercent >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                {totals.plPercent.toFixed(2)}%
-              </p>
+        <div className="space-y-6">
+          {/* Main Portfolio Summary */}
+          <div className={`rounded-lg shadow-md border p-6 ${
+            theme === 'dark' 
+              ? 'bg-gray-800 border-gray-700' 
+              : 'bg-white border-gray-200'
+          }`}>
+            <h2 className={`text-xl font-semibold mb-4 ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+              Portfolio Summary
+            </h2>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div>
+                <p className={`text-sm ${secondaryTextClasses}`}>Total Invested</p>
+                <p className={`text-2xl font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+                  ₹{totals.invested.toFixed(2)}
+                </p>
+              </div>
+              <div>
+                <p className={`text-sm ${secondaryTextClasses}`}>Current Value</p>
+                <p className={`text-2xl font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+                  ₹{totals.curVal.toFixed(2)}
+                </p>
+              </div>
+              <div>
+                <p className={`text-sm ${secondaryTextClasses}`}>Total P&L</p>
+                <p className={`text-2xl font-bold ${totals.pl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                  ₹{totals.pl.toFixed(2)}
+                </p>
+              </div>
+              <div>
+                <p className={`text-sm ${secondaryTextClasses}`}>P&L %</p>
+                <p className={`text-2xl font-bold ${totals.plPercent >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                  {totals.plPercent.toFixed(2)}%
+                </p>
+              </div>
             </div>
           </div>
+
+          {/* Excluded Holdings Summary - Collapsible */}
+          {holdings.filter(h => h.hidden).length > 0 && (
+            <div className={`rounded-lg shadow-md border overflow-hidden ${
+              theme === 'dark' 
+                ? 'bg-gray-800 border-gray-700' 
+                : 'bg-white border-gray-200'
+            }`}>
+              <button
+                onClick={() => setExcludedExpanded(!excludedExpanded)}
+                className={`w-full px-6 py-4 text-left font-medium flex justify-between items-center transition-colors ${
+                  theme === 'dark' 
+                    ? 'bg-gray-750 hover:bg-gray-700 text-white' 
+                    : 'bg-gray-50 hover:bg-gray-100 text-gray-900'
+                }`}
+              >
+                <span className="text-xl">📊 Excluded Holdings Summary</span>
+                <span className={`transform transition-transform duration-300 ${excludedExpanded ? 'rotate-180' : ''}`}>
+                  ▼
+                </span>
+              </button>
+              
+              {excludedExpanded && (
+                <div className="p-6">
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div>
+                      <p className={`text-sm ${secondaryTextClasses}`}>Total Invested</p>
+                      <p className={`text-2xl font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+                        ₹{hiddenTotals.invested.toFixed(2)}
+                      </p>
+                    </div>
+                    <div>
+                      <p className={`text-sm ${secondaryTextClasses}`}>Current Value</p>
+                      <p className={`text-2xl font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+                        ₹{hiddenTotals.curVal.toFixed(2)}
+                      </p>
+                    </div>
+                    <div>
+                      <p className={`text-sm ${secondaryTextClasses}`}>Total P&L</p>
+                      <p className={`text-2xl font-bold ${hiddenTotals.pl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                        ₹{hiddenTotals.pl.toFixed(2)}
+                      </p>
+                    </div>
+                    <div>
+                      <p className={`text-sm ${secondaryTextClasses}`}>P&L %</p>
+                      <p className={`text-2xl font-bold ${hiddenTotals.plPercent >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                        {hiddenTotals.plPercent.toFixed(2)}%
+                      </p>
+                    </div>
+                  </div>
+                  <div className={`mt-4 pt-4 border-t ${theme === 'dark' ? 'border-gray-700' : 'border-gray-200'}`}>
+                    <p className={`text-sm ${secondaryTextClasses}`}>
+                      {holdings.filter(h => h.hidden).length} excluded holdings
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Tag-Based Summaries - Collapsible */}
+          {allTags.length > 0 && (
+            <div className={`rounded-lg shadow-md border overflow-hidden ${
+              theme === 'dark' 
+                ? 'bg-gray-800 border-gray-700' 
+                : 'bg-white border-gray-200'
+            }`}>
+              <button
+                onClick={() => setTagsExpanded(!tagsExpanded)}
+                className={`w-full px-6 py-4 text-left font-medium flex justify-between items-center transition-colors ${
+                  theme === 'dark' 
+                    ? 'bg-gray-750 hover:bg-gray-700 text-white' 
+                    : 'bg-gray-50 hover:bg-gray-100 text-gray-900'
+                }`}
+              >
+                <span className="text-xl">🏷️ Tag-Based Summaries</span>
+                <span className={`transform transition-transform duration-300 ${tagsExpanded ? 'rotate-180' : ''}`}>
+                  ▼
+                </span>
+              </button>
+              
+              {tagsExpanded && (
+                <div className="p-6">
+                  <div className="space-y-4">
+                    {allTags.map(tag => {
+                      const tagTotal = tagTotals[tag];
+                      if (tagTotal.invested === 0) return null;
+                      return (
+                        <div key={tag} className={`rounded-lg border p-4 ${theme === 'dark' ? 'border-gray-700 bg-gray-750' : 'border-gray-200 bg-gray-50'}`}>
+                          <h4 className={`font-semibold mb-3 ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+                            📌 {tag}
+                          </h4>
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                            <div>
+                              <p className={`text-sm ${secondaryTextClasses}`}>Total Invested</p>
+                              <p className={`text-lg font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+                                ₹{tagTotal.invested.toFixed(2)}
+                              </p>
+                            </div>
+                            <div>
+                              <p className={`text-sm ${secondaryTextClasses}`}>Current Value</p>
+                              <p className={`text-lg font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+                                ₹{tagTotal.curVal.toFixed(2)}
+                              </p>
+                            </div>
+                            <div>
+                              <p className={`text-sm ${secondaryTextClasses}`}>Total P&L</p>
+                              <p className={`text-lg font-bold ${tagTotal.pl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                ₹{tagTotal.pl.toFixed(2)}
+                              </p>
+                            </div>
+                            <div>
+                              <p className={`text-sm ${secondaryTextClasses}`}>P&L %</p>
+                              <p className={`text-lg font-bold ${tagTotal.plPercent >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                {tagTotal.plPercent.toFixed(2)}%
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 
       {/* Quick View - Only show when there's data */}
       {holdings.length > 0 && (
-        <div className={`mb-6 rounded-lg border overflow-hidden ${
+        <div className={`mt-8 mb-6 rounded-lg border overflow-hidden ${
           theme === 'dark'
             ? 'bg-gray-800 border-gray-700'
             : 'bg-white border-gray-200'
@@ -994,6 +1145,21 @@ export default function HoldingsTable({ holdings: initialHoldings, totals: initi
                       } ${holding.hidden ? 'opacity-50' : ''}`}
                     >
                        <span className="font-medium">{holding.quantity} {holding.instrument}</span>
+                      <button
+                        onClick={() => toggleHidden(holding.instrument)}
+                        className={`px-1 py-0.5 text-xs rounded font-medium transition-colors ${
+                          holding.hidden
+                            ? theme === 'dark'
+                              ? 'bg-green-900 text-green-300 hover:bg-green-800'
+                              : 'bg-green-100 text-green-700 hover:bg-green-200'
+                            : theme === 'dark'
+                              ? 'bg-red-900 text-red-300 hover:bg-red-800'
+                              : 'bg-red-100 text-red-700 hover:bg-red-200'
+                        }`}
+                        title={holding.hidden ? "Include in totals" : "Exclude from totals"}
+                      >
+                        {holding.hidden ? 'Inc' : 'Exc'}
+                      </button>
                       <span className={`font-semibold ${
                         (quickViewMode === 'netChg' ? holding.netChg : holding.dayChg) >= 0
                           ? 'text-green-600'
