@@ -1,5 +1,6 @@
 import { calculateTotals, calculateVisibleTotals } from '../lib/calculations';
 import { Holding } from '../types/holding';
+import { parseHoldingsCSV } from '../lib/csvParser';
 
 describe('Portfolio Calculations', () => {
   const mockHoldings: Holding[] = [
@@ -249,6 +250,207 @@ describe('Portfolio Calculations', () => {
       
       const result = calculateTotals(zeroInvestmentHoldings);
       expect(result.plPercent).toBe(0); // Should not divide by zero
+    });
+  });
+});
+
+describe('CSV/JSON Parser', () => {
+  describe('parseHoldingsCSV', () => {
+    // Mock fs for testing
+    const mockFs = require('fs');
+    const originalReadFileSync = mockFs.readFileSync;
+
+    beforeEach(() => {
+      // Reset mocks
+      jest.clearAllMocks();
+    });
+
+    afterEach(() => {
+      mockFs.readFileSync = originalReadFileSync;
+    });
+
+    it('should parse JSON API response format correctly', () => {
+      const mockJsonData = {
+        status: 'success',
+        data: [
+          {
+            tradingsymbol: 'AAPL',
+            quantity: 10,
+            average_price: 150,
+            last_price: 160,
+            pnl: 100,
+            day_change_percentage: 2.5
+          },
+          {
+            tradingsymbol: 'GOOGL',
+            quantity: 5,
+            average_price: 2000,
+            last_price: 2100,
+            pnl: 500,
+            day_change_percentage: -1.5
+          }
+        ]
+      };
+
+      mockFs.readFileSync = jest.fn().mockReturnValue(JSON.stringify(mockJsonData));
+
+      const holdings = parseHoldingsCSV();
+
+      expect(holdings).toHaveLength(2);
+
+      // Check first holding
+      expect(holdings[0]).toMatchObject({
+        instrument: 'AAPL',
+        quantity: 10,
+        avgCost: 150,
+        ltp: 160,
+        invested: 1500, // 10 * 150
+        curVal: 1600,   // 10 * 160
+        pl: 100,
+        netChg: 6.666666666666667, // (100 / 1500) * 100
+        dayChg: 2.5,
+        tags: [],
+        hidden: false,
+        customValue: 160,
+        targetAvgCost: 150
+      });
+
+      // Check second holding
+      expect(holdings[1]).toMatchObject({
+        instrument: 'GOOGL',
+        quantity: 5,
+        avgCost: 2000,
+        ltp: 2100,
+        invested: 10000, // 5 * 2000
+        curVal: 10500,   // 5 * 2100
+        pl: 500,
+        netChg: 5,       // (500 / 10000) * 100
+        dayChg: -1.5,
+        tags: [],
+        hidden: false,
+        customValue: 2100,
+        targetAvgCost: 2000
+      });
+    });
+
+    it('should fall back to CSV parsing when content is not valid JSON', () => {
+      const mockCsvData = `Instrument,Qty,Avg Cost,LTP,Invested,Cur Val,P&L,Net Chg %,Day Chg %
+AAPL,10,150,160,1500,1600,100,6.67,2.5
+GOOGL,5,2000,2100,10000,10500,500,5.0,-1.5`;
+
+      mockFs.readFileSync = jest.fn().mockReturnValue(mockCsvData);
+
+      const holdings = parseHoldingsCSV();
+
+      expect(holdings).toHaveLength(2);
+      expect(holdings[0].instrument).toBe('AAPL');
+      expect(holdings[1].instrument).toBe('GOOGL');
+    });
+
+    it('should handle CSV files correctly', () => {
+      const mockCsvData = `Instrument,Qty,Avg Cost,LTP,Invested,Cur Val,P&L,Net Chg %,Day Chg %
+TSLA,20,200,180,4000,3600,-400,-10.0,3.0`;
+
+      mockFs.readFileSync = jest.fn().mockReturnValue(mockCsvData);
+
+      const holdings = parseHoldingsCSV();
+
+      expect(holdings).toHaveLength(1);
+      expect(holdings[0]).toMatchObject({
+        instrument: 'TSLA',
+        quantity: 20,
+        avgCost: 200,
+        ltp: 180,
+        invested: 4000,
+        curVal: 3600,
+        pl: -400,
+        netChg: -10.0,
+        dayChg: 3.0,
+        tags: [],
+        hidden: false,
+        customValue: 180,
+        targetAvgCost: 200
+      });
+    });
+
+    it('should handle quoted CSV fields', () => {
+      const mockCsvData = `"Instrument","Qty","Avg Cost","LTP","Invested","Cur Val","P&L","Net Chg %","Day Chg %"
+"AAPL","10","150","160","1500","1600","100","6.67","2.5"`;
+
+      mockFs.readFileSync = jest.fn().mockReturnValue(mockCsvData);
+
+      const holdings = parseHoldingsCSV();
+
+      expect(holdings).toHaveLength(1);
+      expect(holdings[0].instrument).toBe('AAPL');
+      expect(holdings[0].quantity).toBe(10);
+    });
+
+    it('should throw error when neither CSV nor JSON file exists', () => {
+      mockFs.readFileSync = jest.fn().mockImplementation(() => {
+        throw new Error('File not found');
+      });
+
+      expect(() => parseHoldingsCSV()).toThrow('Neither holdings.csv nor holdings.json found');
+    });
+
+    it('should handle zero investment correctly in JSON parsing', () => {
+      const mockJsonData = {
+        status: 'success',
+        data: [
+          {
+            tradingsymbol: 'ZERO',
+            quantity: 0,
+            average_price: 100,
+            last_price: 100,
+            pnl: 0,
+            day_change_percentage: 0
+          }
+        ]
+      };
+
+      mockFs.readFileSync = jest.fn().mockReturnValue(JSON.stringify(mockJsonData));
+
+      const holdings = parseHoldingsCSV();
+
+      expect(holdings).toHaveLength(1);
+      expect(holdings[0].netChg).toBe(0); // Should handle division by zero
+    });
+
+    it('should parse JSON API response with all expected fields', () => {
+      const mockJsonData = {
+        status: 'success',
+        data: [
+          {
+            tradingsymbol: 'COMPLETE',
+            quantity: 5,
+            average_price: 200,
+            last_price: 220,
+            pnl: 100,
+            day_change_percentage: 1.5
+          }
+        ]
+      };
+
+      mockFs.readFileSync = jest.fn().mockReturnValue(JSON.stringify(mockJsonData));
+
+      const holdings = parseHoldingsCSV();
+
+      expect(holdings).toHaveLength(1);
+      const holding = holdings[0];
+      expect(holding.instrument).toBe('COMPLETE');
+      expect(holding.quantity).toBe(5);
+      expect(holding.avgCost).toBe(200);
+      expect(holding.ltp).toBe(220);
+      expect(holding.invested).toBe(1000); // 5 * 200
+      expect(holding.curVal).toBe(1100);   // 5 * 220
+      expect(holding.pl).toBe(100);
+      expect(holding.netChg).toBe(10);     // (100 / 1000) * 100
+      expect(holding.dayChg).toBe(1.5);
+      expect(holding.tags).toEqual([]);
+      expect(holding.hidden).toBe(false);
+      expect(holding.customValue).toBe(220);
+      expect(holding.targetAvgCost).toBe(200);
     });
   });
 });

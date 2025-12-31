@@ -20,7 +20,7 @@ interface HoldingsTableProps {
 type SortField = 'instrument' | 'quantity' | 'avgCost' | 'ltp' | 'invested' | 'curVal' | 'pl' | 'netChg' | 'dayChg';
 type SortDirection = 'asc' | 'desc';
 
-export default function HoldingsTable({ holdings: _initialHoldings, totals: _initialTotals }: HoldingsTableProps) {
+export default function HoldingsTable({ }: HoldingsTableProps) {
   const [holdings, setHoldings] = useState<Holding[]>([]);
   const [selectedTag, setSelectedTag] = useState<string>('');
   const [newTagInputs, setNewTagInputs] = useState<Record<string, string>>({});
@@ -366,8 +366,10 @@ export default function HoldingsTable({ holdings: _initialHoldings, totals: _ini
   const [showImportModal, setShowImportModal] = useState(false);
   const [copySuccess, setCopySuccess] = useState(false);
   const [tableWidth, setTableWidth] = useState(80); // in rem, 7xl is about 80rem
-  const [excludedExpanded, setExcludedExpanded] = useState(false);
-  const [tagsExpanded, setTagsExpanded] = useState(false);
+   const [excludedExpanded, setExcludedExpanded] = useState(false);
+   const [tagsExpanded, setTagsExpanded] = useState(false);
+   const [jsonInput, setJsonInput] = useState('');
+   const [showJsonInput, setShowJsonInput] = useState(false);
 
   const exportData = () => {
     const data: StoredData = {
@@ -501,62 +503,176 @@ export default function HoldingsTable({ holdings: _initialHoldings, totals: _ini
     ));
   };
 
+  const handleJsonPaste = () => {
+    if (!jsonInput.trim()) {
+      alert('Please paste JSON data first.');
+      return;
+    }
+
+    try {
+      let newHoldings: Holding[] = [];
+      const response = JSON.parse(jsonInput);
+
+      if (response.status === 'success' && Array.isArray(response.data)) {
+        newHoldings = response.data.map((apiHolding: {
+          tradingsymbol: string;
+          quantity: number;
+          average_price: number;
+          last_price: number;
+          pnl: number;
+          day_change_percentage: number;
+        }) => {
+          const quantity = apiHolding.quantity;
+          const avgCost = apiHolding.average_price;
+          const ltp = apiHolding.last_price;
+          const invested = quantity * avgCost;
+          const curVal = quantity * ltp;
+          const pl = apiHolding.pnl;
+          const netChg = invested > 0 ? (pl / invested) * 100 : 0;
+          const dayChg = apiHolding.day_change_percentage;
+
+          // Get existing hidden state and tags from current holdings
+          const existingHolding = holdings.find(h => h.instrument === apiHolding.tradingsymbol);
+
+          return {
+            instrument: apiHolding.tradingsymbol,
+            quantity,
+            avgCost,
+            ltp,
+            invested,
+            curVal,
+            pl,
+            netChg,
+            dayChg,
+            tags: existingHolding?.tags || [],
+            hidden: existingHolding?.hidden || false,
+            customValue: ltp,
+            targetAvgCost: avgCost
+          };
+        });
+      } else {
+        throw new Error('Invalid JSON format - expected API response with "status": "success" and "data" array');
+      }
+
+      if (newHoldings.length === 0) {
+        throw new Error('No valid data found in JSON');
+      }
+
+      // Reset holdings with new data (preserving existing tags/hidden states for matching instruments)
+      setHoldings(newHoldings);
+      alert(`Successfully loaded ${newHoldings.length} holdings from pasted JSON. Previous data has been replaced.`);
+      setJsonInput('');
+      setShowJsonInput(false);
+    } catch (error) {
+      console.error('Error parsing JSON:', error);
+      alert(`Error parsing JSON: ${error instanceof Error ? error.message : 'Unknown error'}. Please ensure it's an API response with "status": "success" and "data" array.`);
+    }
+  };
+
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
     setIsUploading(true);
     try {
-      const XLSX = await import('xlsx');
-      const data = await file.arrayBuffer();
-      const workbook = XLSX.read(data);
-      const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-      const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as (string | number | null)[][];
-      
-      const newHoldings: Holding[] = [];
-      
-      for (let i = 1; i < jsonData.length; i++) {
-        const row = jsonData[i];
-        if (!row || row.length < 9) continue;
-        
-        const row0 = row[0] ?? '';
-        const instrument = String(row0).replace(/"/g, '');
-        if (!instrument) continue;
+      let newHoldings: Holding[] = [];
 
-        // Get existing hidden state and tags from current holdings
-        const existingHolding = holdings.find(h => h.instrument === instrument);
+      if (file.name.toLowerCase().endsWith('.json')) {
+        // Handle JSON API response format
+        const text = await file.text();
+        const response = JSON.parse(text);
 
-        const avgCost = parseFloat(String(row[2] ?? 0)) || 0;
-        const ltp = parseFloat(String(row[3] ?? 0)) || 0;
-        const netChg = parseFloat(String(row[7] ?? 0)) || 0;
-        const netChange = netChg / 100;
-        newHoldings.push({
-          instrument,
-          quantity: parseFloat(String(row[1] ?? 0)) || 0,
-          avgCost,
-          ltp,
-          invested: parseFloat(String(row[4] ?? 0)) || 0,
-          curVal: parseFloat(String(row[5] ?? 0)) || 0,
-          pl: parseFloat(String(row[6] ?? 0)) || 0,
-          netChg,
-          dayChg: parseFloat(String(row[8] ?? 0)) || 0,
-          tags: existingHolding?.tags || [],
-          hidden: existingHolding?.hidden || false,
-          customValue: ltp,
-           targetAvgCost: avgCost * (1 + netChange / 2)
-        });
+        if (response.status === 'success' && Array.isArray(response.data)) {
+          newHoldings = response.data.map((apiHolding: {
+            tradingsymbol: string;
+            quantity: number;
+            average_price: number;
+            last_price: number;
+            pnl: number;
+            day_change_percentage: number;
+          }) => {
+            const quantity = apiHolding.quantity;
+            const avgCost = apiHolding.average_price;
+            const ltp = apiHolding.last_price;
+            const invested = quantity * avgCost;
+            const curVal = quantity * ltp;
+            const pl = apiHolding.pnl;
+            const netChg = invested > 0 ? (pl / invested) * 100 : 0;
+            const dayChg = apiHolding.day_change_percentage;
+
+            // Get existing hidden state and tags from current holdings
+            const existingHolding = holdings.find(h => h.instrument === apiHolding.tradingsymbol);
+
+            return {
+              instrument: apiHolding.tradingsymbol,
+              quantity,
+              avgCost,
+              ltp,
+              invested,
+              curVal,
+              pl,
+              netChg,
+              dayChg,
+              tags: existingHolding?.tags || [],
+              hidden: existingHolding?.hidden || false,
+              customValue: ltp,
+              targetAvgCost: avgCost
+            };
+          });
+        } else {
+          throw new Error('Invalid JSON format - expected API response with status: "success" and data array');
+        }
+      } else {
+        // Handle CSV/Excel files
+        const XLSX = await import('xlsx');
+        const data = await file.arrayBuffer();
+        const workbook = XLSX.read(data);
+        const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+        const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as (string | number | null)[][];
+
+        for (let i = 1; i < jsonData.length; i++) {
+          const row = jsonData[i];
+          if (!row || row.length < 9) continue;
+
+          const row0 = row[0] ?? '';
+          const instrument = String(row0).replace(/"/g, '');
+          if (!instrument) continue;
+
+          // Get existing hidden state and tags from current holdings
+          const existingHolding = holdings.find(h => h.instrument === instrument);
+
+          const avgCost = parseFloat(String(row[2] ?? 0)) || 0;
+          const ltp = parseFloat(String(row[3] ?? 0)) || 0;
+          const netChg = parseFloat(String(row[7] ?? 0)) || 0;
+          const netChange = netChg / 100;
+          newHoldings.push({
+            instrument,
+            quantity: parseFloat(String(row[1] ?? 0)) || 0,
+            avgCost,
+            ltp,
+            invested: parseFloat(String(row[4] ?? 0)) || 0,
+            curVal: parseFloat(String(row[5] ?? 0)) || 0,
+            pl: parseFloat(String(row[6] ?? 0)) || 0,
+            netChg,
+            dayChg: parseFloat(String(row[8] ?? 0)) || 0,
+            tags: existingHolding?.tags || [],
+            hidden: existingHolding?.hidden || false,
+            customValue: ltp,
+              targetAvgCost: avgCost * (1 + netChange / 2)
+          });
+        }
       }
-      
+
       if (newHoldings.length === 0) {
         throw new Error('No valid data found in file');
       }
-      
+
       // Reset holdings with new data (preserving existing tags/hidden states for matching instruments)
       setHoldings(newHoldings);
       alert(`Successfully loaded ${newHoldings.length} holdings from ${file.name}. Previous data has been replaced.`);
     } catch (error) {
       console.error('Error parsing file:', error);
-      alert(`Error parsing file: ${error instanceof Error ? error.message : 'Unknown error'}. Please ensure it has correct format: Instrument, Qty, Avg Cost, LTP, Invested, Cur Val, P&L, Net Chg %, Day Chg %`);
+      alert(`Error parsing file: ${error instanceof Error ? error.message : 'Unknown error'}. For JSON files, ensure it's an API response with "status": "success" and "data" array. For CSV/Excel files, ensure correct format: Instrument, Qty, Avg Cost, LTP, Invested, Cur Val, P&L, Net Chg %, Day Chg %`);
     } finally {
       setIsUploading(false);
       // Clear the file input
@@ -595,24 +711,34 @@ export default function HoldingsTable({ holdings: _initialHoldings, totals: _ini
             </p>
           )}
         </div>
-        <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center w-full sm:w-auto">
-          <div className="flex items-center gap-2 w-full sm:w-auto">
-            <label className={`text-sm font-medium ${textClasses} whitespace-nowrap`}>
-              Upload CSV/Excel:
-            </label>
-            <input
-              type="file"
-              accept=".csv,.xlsx,.xls"
-              onChange={handleFileUpload}
-              disabled={isUploading}
-              className={`text-sm file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-medium flex-1 ${
-                theme === 'dark' 
-                  ? 'file:bg-gray-700 file:text-white hover:file:bg-gray-600' 
-                  : 'file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100'
-              }`}
-            />
-            {isUploading && <span className="text-sm whitespace-nowrap">Processing...</span>}
-          </div>
+            <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center w-full sm:w-auto">
+             <div className="flex items-center gap-2 w-full sm:w-auto">
+               <label className={`text-sm font-medium ${textClasses} whitespace-nowrap`}>
+                 Upload CSV/Excel/JSON:
+               </label>
+               <input
+                 type="file"
+                 accept=".csv,.xlsx,.xls,.json"
+                 onChange={handleFileUpload}
+                 disabled={isUploading}
+                 className={`text-sm file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-medium flex-1 ${
+                   theme === 'dark'
+                     ? 'file:bg-gray-700 file:text-white hover:file:bg-gray-600'
+                     : 'file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100'
+                 }`}
+               />
+               {isUploading && <span className="text-sm whitespace-nowrap">Processing...</span>}
+             </div>
+             <button
+               onClick={() => setShowJsonInput(!showJsonInput)}
+               className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
+                 theme === 'dark'
+                   ? 'bg-gray-700 text-white hover:bg-gray-600'
+                   : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+               }`}
+             >
+               📄 Paste JSON
+             </button>
           <button
             onClick={() => setIsSettingsOpen(!isSettingsOpen)}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
@@ -634,9 +760,64 @@ export default function HoldingsTable({ holdings: _initialHoldings, totals: _ini
             {theme === 'dark' ? '☀️ Light' : '🌙 Dark'}
           </button>
         </div>
-        </div>
+         </div>
 
-        {/* Width Adjustment Progress Bar */}
+         {/* JSON Paste Input Section */}
+         {showJsonInput && (
+           <div className={`mt-4 p-4 rounded-lg border ${
+             theme === 'dark'
+               ? 'border-gray-700 bg-gray-800'
+               : 'border-gray-200 bg-gray-50'
+           }`}>
+             <div className="flex items-center justify-between mb-3">
+               <h3 className={`text-lg font-semibold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+                 📥 Paste JSON Data
+               </h3>
+               <button
+                 onClick={() => setShowJsonInput(false)}
+                 className={`text-xl hover:opacity-70 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}
+               >
+                 ×
+               </button>
+             </div>
+             <p className={`text-sm mb-3 ${secondaryTextClasses}`}>
+               Paste your API response JSON data directly. Expected format: {"{"}&quot;status&quot;: &quot;success&quot;, &quot;data&quot;: [holdings array]{"}"}.
+             </p>
+             <textarea
+               value={jsonInput}
+               onChange={(e) => setJsonInput(e.target.value)}
+                placeholder={`Paste your JSON data here, for example:\n{\n  &quot;status&quot;: &quot;success&quot;,\n  &quot;data&quot;: [\n    {\n      &quot;tradingsymbol&quot;: &quot;AAPL&quot;,\n      &quot;quantity&quot;: 10,\n      &quot;average_price&quot;: 150,\n      &quot;last_price&quot;: 160,\n      &quot;pnl&quot;: 100,\n      &quot;day_change_percentage&quot;: 2.5\n    }\n  ]\n}`}
+               className={`w-full h-64 p-4 rounded-lg font-mono text-xs border resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                 theme === 'dark'
+                   ? 'bg-gray-900 border-gray-700 text-gray-300 placeholder-gray-500'
+                   : 'bg-gray-50 border-gray-200 text-gray-800 placeholder-gray-500'
+               }`}
+             />
+             <div className="mt-4 flex gap-3">
+               <button
+                 onClick={handleJsonPaste}
+                 className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium"
+               >
+                 Load from JSON
+               </button>
+               <button
+                 onClick={() => {
+                   setJsonInput('');
+                   setShowJsonInput(false);
+                 }}
+                 className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                   theme === 'dark'
+                     ? 'bg-gray-700 text-white hover:bg-gray-600'
+                     : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                 }`}
+               >
+                 Cancel
+               </button>
+             </div>
+           </div>
+         )}
+
+         {/* Width Adjustment Progress Bar */}
         <div className="mb-6">
           <input
             type="range"
@@ -667,7 +848,9 @@ export default function HoldingsTable({ holdings: _initialHoldings, totals: _ini
             Upload a CSV or Excel file to get started with your investment portfolio tracking.
           </p>
           <p className={`text-sm ${theme === 'dark' ? 'text-gray-500' : 'text-gray-500'}`}>
-            Expected format: Instrument, Qty, Avg Cost, LTP, Invested, Cur Val, P&L, Net Chg %, Day Chg %
+            Expected format: CSV/Excel - Instrument, Qty, Avg Cost, LTP, Invested, Cur Val, P&L, Net Chg %, Day Chg %<br />
+            JSON - API response with &quot;status&quot;: &quot;success&quot; and &quot;data&quot; array containing holdings<br />
+            Or use the &quot;Paste JSON&quot; button to input data directly
           </p>
         </div>
       )}
